@@ -113,23 +113,41 @@ Windows。开完机就可以拔掉 U 盘。
 
 ## 复现
 
-上游代码和移植说明以 `JustAResearcher/gpu-unlock-ada` 的 `windows/ad104-msi` 为起点。
-本仓库不重复上游代码，只补本卡的差异：
+两条硬约束先看：
+
+1. **firmware asset 必须从你自己的 VBIOS 生成。** `booter_load_ad102.bin`、
+   `v67-…-four-plm.bin`、GSP 镜像都是从 VBIOS 里解出来的，不同 VBIOS 的 FWSEC
+   几何、Booter 签名选择、GSP 载荷都不同。别人的 asset 不能拿来用，也不该刷。
+2. **`SS0/SS1` 的目标值是不是 `0x88888888`/`0x8`，要看你自己的卡。** 本卡 stock 是
+   `0x27304036`/`1`，issue #39 那张 Gigabyte 卡是 `0x25605026`/`4`，字段布局未必一致。
+
+代码改动在一个 fork 分支上，基于上游 `4e7fefc` 一个 commit：
+
+```
+https://github.com/A-XIANGQAQ/gpu-unlock-ada/tree/ad103-2705/windows/ad103-2705
+```
 
 ```powershell
-# 1. 拿上游
 git clone https://github.com/JustAResearcher/gpu-unlock-ada
+cd gpu-unlock-ada
+git fetch https://github.com/A-XIANGQAQ/gpu-unlock-ada ad103-2705
+git checkout FETCH_HEAD
 
-# 2. 用本仓库的补丁工具把 MSI AD104 目录改成本卡（device id / bus / BAR0 / 路径）
+# 生成本机的 ESP 标识（这个文件故意不提交）
+#   按 windows/ad103-2705/boot_profile.example.h 的格式写 windows/ad103-2705/local/boot_profile.h
+#   本卡的 ESP: partition size 614400 sectors, 自己的 GPT partition GUID
+
+# 用本仓库的工具把目标目录改成本卡（device id / bus / BAR0 / 路径 / 驱动 hash）
 python tools/patch-target.py
 
-# 3. 需要改的代码点见 docs/PITFALLS.md —— 那些是编译期必须的，工具覆盖不到
-
-# 4. 编译并放到 FAT32 U 盘的 \EFI\BOOT\BOOTX64.EFI
+# 编译，产物放到 FAT32 U 盘的 \EFI\BOOT\BOOTX64.EFI
 tools\deploy-usb.ps1
 
-# 5. 开机 F8 选 U 盘，按 U
+# 开机 F8 选 U 盘，按 U
 ```
+
+`tools/patch-target.py` 只覆盖数值型 pin。`docs/PITFALLS.md` 里那些结构性改动
+（双显示节点、双 xHCI、级联断开、启动失败不再 halt）已经在上面那个分支里了。
 
 验证：
 
