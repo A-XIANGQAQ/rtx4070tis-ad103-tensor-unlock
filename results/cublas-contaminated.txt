@@ -1,0 +1,7 @@
+# NVIDIA GeForce RTX 4070 Ti SUPER, 66 SMs, sm_89, N=8192 iters=3 reps=3
+# working set ~0.81 GB (f32 staging + 2 inputs)
+mode              best TF/s  median TF/s   runs
+fp16/fp32acc           5.03         1.86   1.1/1.9/5.0
+fp16/fp16acc          66.86        66.80   66.4/66.8/66.9
+fp32                  16.34        16.24   0.4/16.2/16.3
+bf16/fp32acc          74.88        69.89   68.5/69.9/74.9

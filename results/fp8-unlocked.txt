@@ -1,0 +1,6 @@
+# NVIDIA GeForce RTX 4070 Ti SUPER, 66 SMs, sm_89, iters=20000 reps=3
+mode          best TF/s  median TF/s   runs
+e4m3/f32         325.98       323.95   326.0/323.9/307.4
+
+(instruction issue rate, not a GEMM; compare to mma_bench f16/f32,
+ not to the report's 59.3 TF/s CUTLASS number)
