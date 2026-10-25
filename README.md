@@ -172,6 +172,9 @@ tools\verify-unlock.ps1
 - [`JustAResearcher/gpu-unlock-ada`](https://github.com/JustAResearcher/gpu-unlock-ada)
   — 本移植的上游，MSI AD104 Windows UEFI 端口的原作者
 - [`impacifist/Windows-GPU-UNLOCK`](https://github.com/impacifist/Windows-GPU-UNLOCK)
-  — 上游的 snapshot/delta 策略来源
+  — 上游的 snapshot/delta 策略来源。**它在本移植做不到的两点上更成熟**：
+  多个显示子节点的显式枚举（v0.3.1 处理到 4 个），以及没有第二显示 GPU 时的
+  `GU_CONSOLE_AGGREGATE` 拓扑。差距记在 [docs/PRIOR-ART.md](docs/PRIOR-ART.md)
 - [`unitypit71/rtx4070tisuper-tensor-unlock`](https://github.com/unitypit71/rtx4070tisuper-tensor-unlock)
   — 同型号的 Linux 侧完整案例，FWSEC/SEC2 流程的交叉参考
+- [`Zagitta/gpu-unlock`](https://github.com/Zagitta/gpu-unlock) — 机制的最初实现
