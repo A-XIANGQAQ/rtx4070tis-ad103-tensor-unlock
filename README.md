@@ -88,6 +88,17 @@ Windows。开完机就可以拔掉 U 盘。
 
 普通重启（不断电）不会清掉；只有真正断电才需要重来。
 
+### 如果机器上同时装了 ESP 接管版
+
+`CF349D28` 之后的版本把链式目标从 `bootmgfw.efi` 改成了 `bootmgfw.orig.efi`。
+所以 U 盘和 ESP 上的 EFI **必须是同一个版本**：
+
+- ESP 接管版：`bootmgfw.efi` 是我们，链到 `bootmgfw.orig.efi`（原版）
+- U 盘版如果链到 `bootmgfw.efi`，从 U 盘启动会链到 ESP 上那个自己，再链回自己
+
+换版本时两个一起换。U 盘上没有 `AD104-UNLOCK\AUTO.TXT` 就保持手动按 `U`，
+有的话会跳过按键 —— 想要手动就把这个文件删掉。
+
 ## 硬件
 
 | 项 | 值 |
