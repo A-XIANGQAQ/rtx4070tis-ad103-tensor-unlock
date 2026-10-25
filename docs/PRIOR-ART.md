@@ -91,3 +91,77 @@ AD103（4080 / 4080 SUPER）的只读 preflight。没细读。同芯片家族，
 
 前两项是真实差距。本移植能在这台机器上跑通，但那两处是靠「放宽断言」过的，不是靠
 「理解拓扑」过的。
+
+## 补读 `prepare-console.c` 和 `headless-policy.h` 之后的修正
+
+上面那张表有两格需要改，因为读完实际代码发现它的两条路线和这台机器都不完全对应。
+
+### 它的非 aggregate 路线只有 2 个 stage，且不断开 GPU owner
+
+`prepare-console.c` 的文件头：
+
+> All handles are discovered afresh. Only `DisconnectController` on the RTX GOP child and
+> two validated `DriverBindingHandle`s is permitted. **The NVIDIA GPU owner and shared AMI
+> runtime EDID/input driver are never stopped.**
+
+对应的循环是 `for(UINTN stage=1;stage<=2;stage++)` —— TextOut、GOP，两个。
+
+`gpu-unlock-ada` 的 `windows/ad104-msi` 改成了 3 个 stage，第三个断开 `Plan.nv_agent`
+（GPU 的 PciIo owner），然后靠 `ClaimRestore()` 重新拿独占。
+
+**这台机器实测三个 stage 全部 `status=0` 且事务成功**（`result=0 ... flrs=1`），所以
+3-stage 在这里成立。但要注意这是一个**偏离上游的设计**，不是上游验证过的路径。
+
+### `GU_CONSOLE_AGGREGATE` 的判据是「无 path、无 framebuffer 的 GOP」
+
+`headless-policy.h` 里：
+
+```c
+#if !GU_CONSOLE_AGGREGATE
+  if(... || (handles[i]!=t->ConsoleOutHandle && handles[i]!=t->StandardErrorHandle) ||
+     ... || g->Mode->FrameBufferBase || g->Mode->FrameBufferSize)s=EFI_UNSUPPORTED;
+#else
+  /* Aggregate topology: the AMI combo aggregate GOP is pathless ... */
+  if(... || dp || ... || g->Mode->FrameBufferBase || g->Mode->FrameBufferSize)s=EFI_UNSUPPORTED;
+#endif
+```
+
+两种拓扑都要求释放后**零物理 GOP**。这台机器的 GOP 有真实 framebuffer
+（`fb=0x7800000000 fbsz=0x1900000`），且释放后 `Gops()` 在 stage<3 时仍枚举到 1 个 ——
+所以既不是 aggregate，也不是它那两个 profile 的 headless 形态。
+
+**它是第三种形态：单个正常 GOP + ConSplitter 保留。** 本移植的「放宽 `text`/`virtual`
+到允许 0」正是在这种形态下过 preflight 的。所以 aggregate 的代码不能照搬。
+
+### 真正值得抄的一条：残留边断言
+
+```c
+/* headless-policy.h */
+if(e->handle==Gu.handle)return FALSE; /* No driver/child may remain on GPU. */
+```
+
+本移植的 `Expected()`：
+
+```c
+for(i...) { if(Removed(&Original.edges[i],stage))continue; ... }
+```
+
+`Removed()` 为真的边被直接跳过 —— 它只证明「不该消失的边还在」，**从不证明「该消失的
+边确实消失了」**。stage 3 级联断开后如果 GPU handle 上残留一条 EDID 边，`Expected(3,TRUE)`
+照样返回真。
+
+已在 `GuMsiReleased()` 里加了一条只记录不阻断的计数：
+
+```c
+GuLog("release: residual edges on GPU handles=%zu expected=0\n",(size_t)residual);
+```
+
+不改成硬断言的原因是：这台机器上 3-stage 是偏离上游的路径，把断言收紧会让一个还没被
+上游验证过的设计更脆。先看日志里的真实数字，再决定要不要收紧。
+
+### 另外两条不打算抄
+
+- **console 协议完整副本比对**（`outputCopy` / `errorCopy` / `inputCopy` 逐字节）比本移植
+  的「只比指针」严格。值得做，但会改变 `Alive()` 的语义，风险大于收益。
+- **所有观测都在 `TPL_NOTIFY` 内**。本移植只在 `Snapshot()` 前后 `RaiseTPL`，`Alive()` 和
+  `Gops()` 在 TPL 外跑。这是真实缺口，但在单核启动阶段观测到竞态的概率很低。
