@@ -181,8 +181,14 @@ tools\verify-unlock.ps1
 
 ## 状态：已停止（2026-10-26）
 
-解锁机制跑通并验证过，但**没有找到一种既不依赖 U 盘、又不会把机器卡在 boot 的办法**，
-因此已回到 stock。停止时的确切位置、排除过的原因、唯一的存活线索与重试前提：
-见 [docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
+解锁机制跑通并验证过。停下之前最后一次 U 盘尝试（`RUN0004`）其实**解锁成功了**——
+`Transaction result=0 safe=1 … flrs=1`，寄存器写进去了、FLR 扛住了——随后死在一道
+自己的假失败上，而停机时的提示又被静默吞掉，操作者按了重启键，清掉了易失状态。
+三个根因都已定位并修掉（`cb3691b`），但**修复还没在硬件上跑过**。
+
+所以现在的准确说法是：机制成立，U 盘那条路的软件缺陷已知已修，ESP 接管那条仍未验证。
+停止位置、排除过的原因、下次重跑的判据：见
+[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
 
 ESP 接管的事故与三条恢复路线：[docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
+移植期撞到的 14 个坑：[docs/PITFALLS.md](docs/PITFALLS.md)。

@@ -189,6 +189,57 @@ static BOOLEAN Removed(const EDGE *e, UINTN stage) {
 离线用 capture 里的 179 条边验证过：stage 3 之后 `PCI handle` 剩 0 条，
 `console handle` 保留 2 条，正好是 `Expected(3,FALSE)` 需要的状态。
 
+### 6b. 上面这个改法**不够** —— 级联会先把 device path 摘掉
+
+**症状**：`Expected(3,FALSE)` 仍然失败，失败的边指向 GOP handle：
+
+```
+GPU graph missing: handle=0xc6b2bb18 agent=0xc8684918 controller=0xc6b2bb18
+                   protocol=0x387477c2 attributes=0x10 count=1
+```
+
+`0x387477c2` 是 Simple Text Output 的 GUID，`handle` 就是日志里打印的 `gop`。
+那条边**正是 stage 3 按计划拆掉的**，却被判成"意外消失"。
+
+**原因**：`GpuChild()` 是靠 device path 认身份的 ——
+`HandleProtocol(h, &DevicePathGuid)` 拿到路径，再比 24 字节 PCI 前缀。
+但 `DisconnectController` 会**先卸载 console/GOP 驱动**，unbind 时把 device path
+协议从这些 handle 上摘掉，级联释放 handle 是之后的事。所以在
+`Expected(3,FALSE)` 执行的那一刻，`GpuChild()` 对那些 handle 一律返回 FALSE。
+
+这是「用会消失的属性做身份判断」的经典错。路径只在驱动绑着的时候存在，
+而 stage 3 的全部目的就是解除绑定。
+
+**改法**：身份要缓存。preflight 里路径还活着的时候记一遍：
+
+```c
+/* PLAN 里加 */
+EFI_HANDLE gpu_child[8];UINTN gpu_child_count;
+
+/* 在 GuMsiPreflight 的 Snapshot(&Original) 之后、Consumers() 之前调用 */
+static EFI_STATUS CacheGpuChildren(VOID) {
+  EFI_HANDLE *handles=NULL;UINTN count=0;
+  EFI_STATUS s=b->LocateHandleBuffer(AllHandles,NULL,NULL,&count,&handles);
+  for(UINTN i=0;s==EFI_SUCCESS&&i<count;i++) {
+    if(!PathGpuChild(handles[i]))continue;   /* 旧的路径匹配，改名保留 */
+    if(Plan.gpu_child_count==8){s=EFI_BUFFER_TOO_SMALL;break;}
+    Plan.gpu_child[Plan.gpu_child_count++]=handles[i];
+  }
+  b->FreePool(handles);return s;
+}
+/* GpuChild 先查缓存，未命中再回退到路径匹配 */
+static BOOLEAN GpuChild(EFI_HANDLE h) {
+  if(!h)return FALSE;
+  for(UINTN i=0;i<Plan.gpu_child_count;i++)if(Plan.gpu_child[i]==h)return TRUE;
+  return PathGpuChild(h);
+}
+```
+
+回退那一步不能删：`test_msi_release` 的 `GpuChildPath[]` fixture 不填缓存，
+靠路径回退才能过。
+
+同理适用于任何「拆完之后还要验证」的检查：**先取身份，再拆，再拿身份比对**。
+
 ---
 
 ## 7. `GuMsiReadyForWindows()` 里的 `PMC_BOOT_0` pin
@@ -289,6 +340,90 @@ failed:
 
 配套把 `Expected()` / `attrs` / `supported` 这些图相等性检查降级成日志。它们原本是
 「证明固件行为符合预期」的断言，在移植阶段会挡住真正的进度。
+
+### 10b. 光「不 halt」还不够 —— halt 的时候没人看得见
+
+**症状**：屏幕停在一帧，不滚动、不提示，操作者据此判断"卡死"，按重启键。
+
+**原因**：`app.c` 在启动事务前调用 `GuBootSilence()`，因为接下来要把显示驱动
+卸掉，控制台随时会消失。这个选择是对的。问题是**它没有对应的「恢复」**——
+`GuBootHalt()` 里那句 `STOPPED.` 走的是 `GuBootSay()`，而 `GuBootSay()` 在
+`Silent` 为真时直接 return：
+
+```c
+VOID GuBootSay(const CHAR16 *text) {
+  if(Silent)return;          /* ← 连 "STOPPED" 一起吞掉 */
+  Table->ConOut->OutputString(Table->ConOut,(CHAR16 *)text);
+}
+```
+
+于是最需要告知的那一刻，恰好是最安静的那一刻。**看不清的停机和死机在操作者眼里
+没有区别，而处理死机的习惯动作是重启** —— 重启会清掉易失的 `SS0`/`SS1`，
+把已经成功的解锁送掉。
+
+**改法**：所有终止路径第一步先撤销静默。
+
+```c
+VOID GuBootWake(VOID){Silent=FALSE;}
+
+VOID GuBootHalt(VOID) {
+  GuBootWake();                 /* 先恢复输出 */
+  GuBootSay(L"\r\nSTOPPED. Power OFF fully; next boot use Windows Boot Manager.\r\n");
+  for(;;)__asm__ volatile("pause");
+}
+```
+
+`GuBootSilence()` 建立的不变量应该是「静默只覆盖事务体，出口一定恢复」。
+
+### 10c. 关日志被记成硬件故障，把每一道后续门都毒死
+
+**症状**：日志最后一行是 `TRANSACTION OK`，后面没有任何解释，`fault=1`。
+
+**原因**：旧 `GuLog()` 把"日志已经关了"当成故障：
+
+```c
+if(n==(size_t)-1||n>=sizeof(buffer)||!Log){Gu.fault=TRUE;return;}
+```
+
+而 `app.c` 里所有 `Gu.fault` 检查都排在 `GuBootClose()` 之后 ——
+**主动关日志这个正常动作，会污染之后每一个 gate**。典型顺序：
+
+```c
+GuLog("TRANSACTION OK: …");
+stage="close-USB-log";s=GuBootClose();if(s!=EFI_SUCCESS||Gu.fault)goto failed;
+stage="final-Windows-verification";if(!GuMsiReadyForWindows()){…}  /* 这里已经中毒 */
+```
+
+**改法**：区分「按计划关闭」和「写失败」。
+
+```c
+static BOOLEAN Silent,Sealed;
+VOID GuLog(const char *format,...) {
+  if(Sealed||!Log)return;                        /* 按计划关闭：静默 no-op */
+  ...
+  if(n==(size_t)-1||n>=sizeof(buffer)){Gu.fault=TRUE;return;}
+}
+EFI_STATUS GuBootClose(VOID) {
+  ...
+  if(s==EFI_SUCCESS)Sealed=TRUE;                 /* 只有干净关闭才 seal */
+  return s;
+}
+```
+
+失败信息进不了日志的时候，就把它打到屏幕上 —— 也就是 10b 的 `GuBootWake()`。
+
+顺带把最后那道门挪到关日志**之前**：
+
+```c
+/* 之前：先关日志再检查 → 拒绝的理由写不进日志，日志停在 OK 上 */
+/* 之后：先检查再关日志 → 拒绝会留下 stage 名和状态码 */
+stage="final-Windows-verification";if(!GuMsiReadyForWindows()){s=EFI_NOT_READY;goto failed;}
+GuLog("TRANSACTION OK: … handoff check passed …\n");
+stage="close-USB-log";s=GuBootClose();if(s!=EFI_SUCCESS||Gu.fault)goto failed;
+```
+
+**诊断原则**：一条 `OK` 后面什么都没有，不是"成功之后正常结束"，
+是"失败发生在没有任何人能看到的地方"。
 
 ---
 
