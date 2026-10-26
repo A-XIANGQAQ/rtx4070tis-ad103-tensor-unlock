@@ -1,7 +1,8 @@
 # 事故记录：ESP 接管导致开机卡住（2026-10-25/26）
 
 > 状态：**已决定不再使用 ESP 接管**，恢复方式已确认。本文记录现象与判据。
-> 恢复步骤见下；标 `待补` 的字段在恢复后采集回填。
+> 2026-10-27 补记：恢复后测到了现场事实，下面「三个候选原因」里两条被排除、一条降级为
+> 待验证假设。结论没变，但排除过程和丢失的证据链要留着。
 
 ## 现象
 
@@ -23,30 +24,56 @@ firmware -> \EFI\Microsoft\Boot\bootmgfw.efi      (被换成解锁 EFI)
 `\AD104-ASSETS`、`\AD104-UNLOCK`（含 `AUTO.TXT`）。**原版文件在安装时被逐字节保留**，
 所以这不是"变砖"，是启动路径被劫持。
 
-## 两个候选原因（`docs/PITFALLS.md` 都已预言）
+## 回滚前的现场（2026-10-27 实测）
 
-1. **`#9` 内置卷被拒**：上游 `boot_io.c` 里有 `...||!usb) return EFI_ACCESS_DENIED;`
-   和 `volume==OwnVolume → EFI_NOT_FOUND`。从 ESP 自身启动时这两道闸都会命中，
-   表现正是"程序什么都不做就退出，连 Windows 都不启动"。要装 ESP 必须先落三处改动：
-   允许内置卷 / 允许同卷交接 / 链式目标改名。
-2. **版本混用自我链接**：`CF349D28` 之后链式目标才改成 `bootmgfw.orig.efi`。
-   若 U 盘上的 EFI 是旧版（链到 `bootmgfw.efi`），而 ESP 上的 `bootmgfw.efi` 已经是
-   解锁 EFI，就会"自己链自己"。
+```
+ESP                    disk 3 分区 1，300 MB（614400 扇区），Type=System，无盘符
+ESP bootmgfw.efi       解锁 EFI（哈希未记录，见下）
+ESP bootmgfw.orig.efi  3086680 B / 2d60a220…（原版，逐字节完好）
+ESP AD104-ASSETS       5 个文件，共 80.5 MB
+```
 
-3. **ESP 空间不足**（本仓库原先没列出的一条，但机制最硬）：`install-esp.ps1` 要往 ESP 里放
-   5 个固件资产共 **80.7 MB**（`booter_load_ad102.bin`、`v67-ad102-610.43.03-four-plm.bin`、
-   `gsp_ga10x.bin`、`gsp_boot_ad102.bin`、`gsp_boot_desc_ad102.bin`），而脚本**没有任何剩余空间检查**。
-   上游另一个 Windows 端口（`MarvinFS/rtx4090-uefi`）给出的硬阈值是：FAT32 上需要 **~85 MB** 余量，
-   且只有在 ESP 还剩 **32 MB 保留空间（即 ≥117 MB 空闲）** 时才把资产放 ESP；它明确写"100 MB 的 ESP 通常不够"。
-   若本机 ESP 就是默认 100 MB，这条足以解释"什么都没发生就停在 boot"。
+`bootmgfw.efi` 那个版本的哈希**没有留下来**：`install-esp.ps1` 装的时候会把
+`efi_sha256` 写进 `esp-install-state.json`，而 `-Rollback` 顺手把这个文件删了。
+这是一次自己造成的证据丢失 —— 想知道当时跑的是哪版，只能从安装时间反推
+（回滚前 ESP 上那个文件的 mtime），而这条也没记。
+
+## 三个候选原因，现在的结果
+
+1. **~~`#9` 内置卷被拒~~ — 已排除。** 上游 `boot_io.c` 里那两道闸
+   （`...||!usb) return EFI_ACCESS_DENIED;` 和 `volume==OwnVolume → EFI_NOT_FOUND`）
+   装上去的版本里三处改动全都在（允许内置卷 / 允许同卷交接 / 链式改名
+   `bootmgfw.orig.efi`）。
+2. **~~版本混用自我链接~~ — 已排除。** `bootmgfw.orig.efi` 两轮都完整（3086680 B /
+   `2d60a220`），不存在"自己链自己"。链式改名从 `ad103-2705` 分支的 `e6ab1c8` 起就有，
+   之后每个构建都链到 `.orig`，所以装上去的那版目标是对的。
+3. **~~ESP 空间不足~~ — 已排除。** ESP 是 300 MB，资产只占 80.5 MB，余量 200 MB 以上，
+   远超 `MarvinFS` 给的 117 MB 阈值。（这一条当初是"机制最硬"的猜测，结果是错的。）
+
+也排除了**启动项顺序**：不是"USB 排在前面导致没走 ESP"，是主动在固件菜单里选
+Windows Boot Manager 时卡住。
+
+**所以三条候选原因全错。** 剩下的唯一存活线索是 `boot_io.c` 的 `Inspect()` 会拒绝第二个
+`MEDIA_HARDDRIVE_DP` 节点 —— 这是 USB 路径与 ESP 路径唯一已知的代码差异：
+
+```c
+/* 改前 */
+if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
+```
+
+`c9f215d` 已改成接受多个 harddrive 节点（`hd>16` 为上界），并给 `GuBootOpen` 的六个
+静默出口加了屏显。**但这个改动从未在 ESP 路径上重测过** —— 它是假设，不是结论。
+
+### 丢失的证据（这次取证上的最大失误）
+
+回滚脚本 `install-esp.ps1 -Rollback` 会删除 `\AD104-UNLOCK`。所以"EFI 到底有没有跑到
+写日志那一步"这个问题，**再也无法回答**。卡住之后先挂 ESP 读日志（`mountvol W: /S`），
+再决定要不要回滚 —— 顺序反了，判据就没了。
 
 旁证：三种独立实现里，ESP 接管都是最不成熟的那条——
 `MatchaCake/ad102-windows-unlock` 把"ESP 常驻 + `bcdedit` 接管"标为 **❌ 未测试，仅设计文档**；
 `MarvinFS/rtx4090-uefi` 干脆不走这条路（独立启动项 + 专用分区，是它唯一验证过的形态）；
 `wyx1277-.../gpu-unlock-4070tis-ad103-win` 走固件启动项 + 开关，并提供 boot log 的 `FINAL` 行用于定位。
-
-待补（恢复后采集）：`屏幕停在哪一屏 / 有没有 RUNxxxx.TXT / 安装的 EFI 版本 /
-ESP 剩余空间 / AD104-ASSETS 文件数`。
 
 ## 恢复步骤（已确认可用）
 
@@ -94,8 +121,13 @@ copy /y W:\EFI\Microsoft\Boot\bootmgfw.orig.efi W:\EFI\Microsoft\Boot\bootmgfw.e
 
 ## 结论
 
-- **保留易失（U 盘手动）方案**。ESP 接管的代价不只是每次开机多 ~40 秒，而是把实验代码
-  放进启动关键路径；一旦它的 gate 拒绝执行，机器就停在 boot 阶段。
-- 要做非易失，前置条件是：先落 `PITFALLS #9` 的三处改动，并保证 U 盘与 ESP 上的 EFI
-  同版本；然后在一台可以随时用 live USB 恢复的机器上验证。
+- **保留易失（U 盘手动）方案。** 这条路有 Windows 内实测数据的是 `RUN0005`（EFI
+  `76FEE036`）和 10/25 那次（EFI `5d5277c2`，该产物已不在盘上），判据见
+  [WHERE-IT-STOPPED.md](WHERE-IT-STOPPED.md)。
+- ESP 接管的代价不只是每次开机多 ~40 秒，而是把实验代码放进启动关键路径；一旦它的
+  gate 拒绝执行，机器就停在 boot 阶段。**这台机器上它就是没跑通，原因还没查清。**
+- 要非易失，别在 ESP 接管上加补丁 —— 换形状：独立 FAT32 分区 + 固件启动项，不劫持
+  `bootmgfw.efi`。按 `MarvinFS` 的数字：资产 ~85 MB，专用分区最小 128 MB（4K 扇区盘
+  272 MB），用现有 ESP 需 ≥117 MB 空闲。这个形状的好处是解锁 EFI 挂了，
+  Windows Boot Manager 那条路完全没被碰过。
 - 恢复不需要重新安装 Windows，也不需要动 BCD。

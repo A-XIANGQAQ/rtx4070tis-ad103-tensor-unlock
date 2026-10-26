@@ -17,7 +17,7 @@ Get-Content SHA256SUMS | ForEach-Object {
 |---|---|---|
 | `mma-baseline.txt` | `bench/mma_bench.cu`（f16/bf16/s8/dp4a/ffma） | stock 基线，10/25 采集 |
 | `fp8-baseline.txt` | `bench/fp8_mma_bench.cu`，`mma.m16n8k32` e4m3→f32，寄存器空转 | **issue rate**，不是 GEMM；stock 基线 |
-| `mma-unlocked.txt` / `fp8-unlocked.txt` | 同上两套 | 更早一次解锁（`CF349D28`）的采集，`reps=3` |
+| `mma-unlocked.txt` / `fp8-unlocked.txt` | 同上两套 | 10/25 23:18 那次解锁（`RESULT.md` 记 EFI `5d5277c2`，100864 B；**该 EFI 产物与当次 `RUNxxxx.TXT` 均已不在盘上**），`reps=3` |
 | `mma-unlocked-run0005.txt` / `fp8-unlocked-run0005.txt` | 同上两套 | `RUN0005`（修好的 EFI）那次开机，`reps=5` |
 | `cublas-unlocked-run0005.txt` | `bench/cublas_gemm.cu` GEMM，N=8192 | `RUN0005` 那次开机；每用例带 `nonzero C` 校验行 |
 | `mma-unlocked-live.txt` / `fp8-unlocked-live.txt` / `cublas-unlocked-live.txt` | 同上三套 | 同一个 boot 内后来复测（卡跑在 2640 MHz） |
