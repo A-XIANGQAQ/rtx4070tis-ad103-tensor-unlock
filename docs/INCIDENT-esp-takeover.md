@@ -1,7 +1,8 @@
 # 事故记录：ESP 接管导致开机卡住（2026-10-25/26）
 
-> 状态：**已决定不再使用 ESP 接管**，恢复方式已确认。本文记录现象与判据，
-> 其中标 `待补` 的字段由当事人在恢复时补齐。
+> 状态：**已决定不再使用 ESP 接管**，恢复方式已确认。本文记录现象与判据。
+> 恢复步骤与取证清单见 [`TONIGHT-RECOVERY.md`](TONIGHT-RECOVERY.md)；
+> 其中标 `待补` 的字段在那份清单 §2 里逐条采集后回填本文件。
 
 ## 现象
 
@@ -33,7 +34,20 @@ firmware -> \EFI\Microsoft\Boot\bootmgfw.efi      (被换成解锁 EFI)
    若 U 盘上的 EFI 是旧版（链到 `bootmgfw.efi`），而 ESP 上的 `bootmgfw.efi` 已经是
    解锁 EFI，就会"自己链自己"。
 
-待补（恢复时确认）：`待补：屏幕停在哪一屏 / 有没有出现 RUNxxxx.TXT / 安装的 EFI 版本`。
+3. **ESP 空间不足**（本仓库原先没列出的一条，但机制最硬）：`install-esp.ps1` 要往 ESP 里放
+   5 个固件资产共 **80.7 MB**（`booter_load_ad102.bin`、`v67-ad102-610.43.03-four-plm.bin`、
+   `gsp_ga10x.bin`、`gsp_boot_ad102.bin`、`gsp_boot_desc_ad102.bin`），而脚本**没有任何剩余空间检查**。
+   上游另一个 Windows 端口（`MarvinFS/rtx4090-uefi`）给出的硬阈值是：FAT32 上需要 **~85 MB** 余量，
+   且只有在 ESP 还剩 **32 MB 保留空间（即 ≥117 MB 空闲）** 时才把资产放 ESP；它明确写"100 MB 的 ESP 通常不够"。
+   若本机 ESP 就是默认 100 MB，这条足以解释"什么都没发生就停在 boot"。
+
+旁证：三种独立实现里，ESP 接管都是最不成熟的那条——
+`MatchaCake/ad102-windows-unlock` 把"ESP 常驻 + `bcdedit` 接管"标为 **❌ 未测试，仅设计文档**；
+`MarvinFS/rtx4090-uefi` 干脆不走这条路（独立启动项 + 专用分区，是它唯一验证过的形态）；
+`wyx1277-.../gpu-unlock-4070tis-ad103-win` 走固件启动项 + 开关，并提供 boot log 的 `FINAL` 行用于定位。
+
+待补（用 `TONIGHT-RECOVERY.md` §2 采集）：`屏幕停在哪一屏 / 有没有 RUNxxxx.TXT / 安装的 EFI 版本 /
+ESP 剩余空间 / AD104-ASSETS 文件数`。
 
 ## 恢复步骤（已确认可用）
 

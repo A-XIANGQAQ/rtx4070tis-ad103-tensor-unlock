@@ -178,3 +178,8 @@ tools\verify-unlock.ps1
 - [`unitypit71/rtx4070tisuper-tensor-unlock`](https://github.com/unitypit71/rtx4070tisuper-tensor-unlock)
   — 同型号的 Linux 侧完整案例，FWSEC/SEC2 流程的交叉参考
 - [`Zagitta/gpu-unlock`](https://github.com/Zagitta/gpu-unlock) — 机制的最初实现
+
+## 恢复手册（2026-10-26）
+
+ESP 接管导致开机卡在 boot 阶段的事故与恢复：见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)；
+进入系统之后的核对、取证与决策清单：见 [docs/TONIGHT-RECOVERY.md](docs/TONIGHT-RECOVERY.md)。
