@@ -37,8 +37,10 @@
 
 **判据只用比值，不用绝对值。** 同一个 boot 里再测一遍，所有模式整体涨了 6%
 （`f16/f16` 175.1→188.0，`f16/f32` 176.1→188.1），而它们的比值从 1.006 变成 1.001 ——
-变的只有 SM 频率，机制没变。降频时更极端：实测 2775 MHz 掉到 1440 MHz，让 `f16/f32`
-从 176 掉到 88，恰好等于 stock 值，单看绝对值会误判成「没解锁」。
+变的只有 SM 频率，机制没变。降频更严重时会等比缩，绝对值可以掉到和 stock 一样：
+`f16/f32` 一旦落到 88 附近，光看数字根本分不出「没解锁」还是「解锁了但被降频」，
+那时只有比值能判。这一条我们没能留下采集文件（当时 GPU 被别的负载占着，只顾着看数字
+没存盘），就当提醒记着，不要当数据引用。
 
 所以判据是 `f16/f32 ÷ f16/f16`：**stock ≈ 0.50，解锁 = 1.00**。这个比值乘掉了频率，
 是唯一跨机器、跨频点可比的东西。两次采样的完整对照在
@@ -46,16 +48,51 @@
 
 原始输出在 [results/](results/)。
 
-解锁后实际改的寄存器，从设备日志读回：
+解锁后实际改的寄存器，`RUN0005` 日志原文（`H:\AD104-UNLOCK\RUN0005.TXT`，行号照抄）：
 
 ```
-before:  FEAT_OVR_PLM=0xffffff8f  SS0=0x27304036  SS1=0x00000001  readout1=0x00410080
-applied: FEAT_OVR_PLM=0xffffffff  SS0=0x88888888  SS1=0x00000008  readout1=0
-post-FLR: SS0=0x88888888  SS1=0x00000008  readout1=0  full=1
+:110  permission before-firmware: FEAT[0x823804]=0xffffff8f before=0xffffff8f expected=0xffffffff required=1 valid=1
+:111  before-firmware: readout1=0x410080 fields=0 0 2 0 0 2 0 2 0 valid=1 full=0
+:148  permission after-payload:  FEAT[0x823804]=0xffffffff before=0xffffff8f expected=0xffffffff required=1 valid=1
+:151  selector read:   SS0=0x7300036 expected_unlock=0x88888888
+:152  selector write:  SS0=0x88888888
+:153  selector result: SS0=0x88888888 expected=0x88888888 matched=1
+:154  selector read:   SS1=0x1 expected_unlock=0x8
+:155  selector write:  SS1=0x8
+:156  selector result: SS1=0x8 expected=0x8 matched=1
+:157  selectors-applied: readout1=0 fields=0 0 0 0 0 0 0 0 0 valid=1 full=1
+:170  post-FLR SEC2 reset released, GSP halted, BME=0 pending=0 WPR2=1ffffe00:00000000 SS0=88888888 SS1=00000008
+:174  permission post-FLR: FEAT[0x823804]=0xffffffff before=0xffffff8f expected=0xffffffff required=1 valid=1
 ```
 
-`readout1` 的 27 个 feature 位全部归零，`FMLA32` / `IMLA2` / `IMLA4` 三个权限位
-变为 full。
+`readout1`（`FEAT_READOUT_1`，`0x00823818`）是**九个 3-bit 字段**，掩码 `0x07ffffff`
+（27 bit）——见 `windows/ad103-2705/vendor/unlock_610.c:33`。stock 时
+`fields=0 0 2 0 0 2 0 2 0`（其中三个字段是 2 = 1/4 速率），解锁后九项全 0，
+`full` 由 `valid && !(value & 0x07ffffff)` 算出（`vendor/unlock_610.c:391`）。
+
+**哪三个字段对应哪条指令路径，本仓库没有建立。** 上游
+`rtx4090-register-report.md:272-278` 明说「The mapping of those three reduced fields to
+the named FMLA/IMLA fuse words is not established」，我们也没有独立证据。
+`FMLA32=1→0`、`IMLA2=1→0`、`IMLA4=1→0` 那张表来自 NVIDIA RM getter 的另一条读法
+（`docs/evidence/ada2705/sm-rates.json`），不是从 `readout1` 解出来的 —— 两者能对上，
+但只能当**同一个事实的两种视图**，不能互相推导。
+
+`SS0` 的 stock 值**不是常量**。逐次冷启动实测（各 `RUN` 的 `entry:` 行）：
+
+```
+RUN0001  ss0=0x6310036   RUN0002  ss0=0x7300036
+RUN0004  ss0=0x5305036   RUN0005  ss0=0x7300036
+```
+
+`SS1` 恒为 `0x1`；`SS0` 逐次不同，且差异不是只在高位（`0x6310036` 和 `0x5305036`
+低 16 位是 `0x0036` 和 `0x5036`）。上游也记了同一件事：`rtx4090-register-report.md:277-278`
+「The high byte of cold SS0 varied between earlier power-ons while all override enable bits
+stayed clear; its meaning is unverified」。只读探针 `CAP0002.JSON`（本机
+`G:\workspace\rtx2705\captures\`，10/25 20:31，`gpu_writes:false`）那次采到
+`SS0=0x27304036` / `SS1=0x1`，那是**一次采样**，不是固定值。
+
+所以「断电后回到 stock」这个判断，别拿 `SS0` 的等号去验；看 `SS1==0x1` 加
+`readout1` 的 `full=0` 就够了。
 
 ## DLSS 超分与帧生成：本次实测没有收益
 
@@ -131,8 +168,10 @@ DLSS on : 126.22 FPS  -> 126.48 FPS
 
 ## 易失性
 
-`SS0` / `SS1` 是 volatile 寄存器。**完全断电后回到 `0x27304036` / `0x1`**，需要重新
-走一遍开机流程。
+`SS0` / `SS1` 是 volatile 寄存器。**完全断电后 `SS1` 回到 `0x1`、`SS0` 回到某个新的
+随机值**，需要重新走一遍开机流程。`SS0` 的冷启动值每次都不同（上面四个 `RUN` 的
+`entry:` 行为证），所以别把它当常量去比对；要比就比 `SS1==0x1` 和 `readout1` 的
+`full=0`。
 
 本仓库只采用 **U 盘手动引导**：插 U 盘 → F8 → 选 U 盘 → 按 `U` → 约 40 秒 → 进
 Windows。开完机就可以拔掉 U 盘。
@@ -176,8 +215,11 @@ Windows。开完机就可以拔掉 U 盘。
 1. **firmware asset 必须从你自己的 VBIOS 生成。** `booter_load_ad102.bin`、
    `v67-…-four-plm.bin`、GSP 镜像都是从 VBIOS 里解出来的，不同 VBIOS 的 FWSEC
    几何、Booter 签名选择、GSP 载荷都不同。别人的 asset 不能拿来用，也不该刷。
-2. **`SS0/SS1` 的目标值是不是 `0x88888888`/`0x8`，要看你自己的卡。** 本卡 stock 是
-   `0x27304036`/`1`，issue #39 那张 Gigabyte 卡是 `0x25605026`/`4`，字段布局未必一致。
+2. **`SS0/SS1` 的目标值是不是 `0x88888888`/`0x8`，要看你自己的卡。** 本卡 `SS1` 冷启动
+   恒为 `0x1`、`SS0` 每次冷启动都是新的随机值（详见上面「解锁后实际改的寄存器」一节，
+   四个 `RUN` 全不同）；issue #39 那张 Gigabyte 卡报的是 `0x25605026`/`4`，字段布局未必一致。
+   `0x88888888` 的含义是「八个 4-bit 字段全填 8」（`vendor/unlock_610.c:28-31`），
+   字段划分变了就得重新算目标值。
 
 代码改动在一个 fork 分支上，基于上游 `4e7fefc` 一个 commit：
 
