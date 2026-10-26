@@ -30,6 +30,12 @@
 | 16,377 | 1,629.6 | 2,002.1 | **+22.9%** |
 | 65,529 | 1,284.4 | 1,630.5 | **+27.0%**（51.0 → 40.2 s） |
 
+### ComfyUI 图像生成（INT8 权重也变快了）
+来源：上游 `docs/ada-2882-report.md`（RTX 4060，驱动 615.78.08，Fedora 44）
+
+- Z-Image Turbo 文生图，1024×1024，**INT8 权重**：**9.39 s → 8.25 s（−12%）**，五次中位数
+- 报告判断：收益来自**仍以 BF16 跑的部分**（例如 attention），而不是 INT8 的 matmul 本身
+
 ### H3 视频（被独立复现过，最可信的一条）
 来源：上游 `docs/evidence/rtx4090-595.91.07/README.md`（RTX 4090，驱动 595.91.07）
 
@@ -41,6 +47,8 @@
 | 应用 | 结果 | 来源 |
 |---|---|---|
 | Qwen3.6-27B **prefill 4096** / **decode 128**（4090） | 2869.6→2911.1 t/s、46.42→46.52 t/s，官方写 "No meaningful gain demonstrated" | 上游 `rtx4090-595.91.07` |
+| llama.cpp，27B **IQ2_XS**（4070 SUPER） | pp512 1407.12→1407.03、pp2048 1420.1→1423.8、tg128 45.93→45.93，**全无变化** | 上游 `docs/ada-2783-report.md` |
+| llama.cpp，Qwen3.5-4B **Q8_0**（4060） | prompt 3276.87→3290.00 t/s、gen 50.42→50.48 t/s，**无变化** | 上游 `docs/ada-2882-report.md` |
 | 量化 MoE 服务（IQ3_S，8K prefill） | 8K **0.983×**、32K 0.993×，decode 在噪声内 | 上游 `rtx4090-48g-modded/serving-workload.md` |
 | MiniMax H3 + **SageAttention** | "几乎没改善，瓶颈不在 FP16 发射率" | `MatchaCake/ad102-windows-unlock` |
 | 游戏 / DLSS / 光追 / INT8 / 逐 token decode / 挖矿 | 机制上不沾这条路径 | `wyx1277.../gpu-unlock-4070tis-ad103-win` |
@@ -50,7 +58,21 @@
 - **受益**：以 FP16/BF16 密集 GEMM 为主、且**不是逐 token** 的生成类负载——
   语音合成、音乐生成、扩散/视频，以及**长 prompt 的一次性编码（prefill）**。
 - **不受益**：逐 token decode（同一个 Qwen 27B：prefill 在 4080 上 +27%，decode 在 4090 上 0%）、
-  量化推理、注意力已换成专用算子的负载。
+  **走 INT8/MMQ 路径的量化引擎**（llama.cpp 的 IQ2_XS 与 Q8_0 都测了，pp 与 tg 全无变化）、
+  注意力已换成专用算子的负载。
+
+### 更准确的判据：看引擎**调用哪条 kernel**，不是看模型是否量化
+
+同一张 4060（AD107）上，同一份报告里同时出现了三种结果：
+
+| 路径 | 实测 | 说明 |
+|---|---|---|
+| torch / cuBLAS GEMM | fp16 **+55%**、bf16 **+58%**、tf32 **+63%**、fp16-acc16 +12%、fp32 持平 | 走的正是被解锁的"FP16/BF16 输入 + FP32 累加" |
+| ComfyUI（INT8 权重，但 attention 走 BF16） | **−12% 时间** | 吃到了"仍然用 BF16 的那部分" |
+| llama.cpp（IQ2_XS / Q8_0） | pp 与 tg **均无变化** | 量化 matmul 走 INT8/MMQ，INT8 发射率本来就没变 |
+
+所以判断"我的应用会不会快"，看三件事：**权重/激活精度是不是 FP16/BF16**、**引擎是否用 cuBLAS 这类 FP32 累加 GEMM**、
+**这段耗时是不是 prefill/编解码这类密集计算**（逐 token decode 永远不受益）。
 
 ## 四、读这张表要注意什么
 
