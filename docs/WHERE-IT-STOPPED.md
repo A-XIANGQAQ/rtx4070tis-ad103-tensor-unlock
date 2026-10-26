@@ -26,7 +26,8 @@
 
 事务日志：`result=0 safe=1 retained=0 started=1 quiesced=1 flrs=1 DMA_live=0`，
 FLR 后 `SS0=0x88888888 SS1=0x00000008 readout1=0 full=1`。
-数值校验 `failures=0 max_abs=0`（77935 个 cell，FP16 与 BF16 两种累加各三形状）。
+数值校验 `failures=0 max_abs=0`（每个模式 79935 个 cell，FP16 与 BF16 两种累加合计
+159870 个）。
 
 **这条路径有 Windows 内实测数据的只有两次**：10/25 23:18 那次（`RESULT.md` 记 EFI
 `5d5277c2`，100864 B；System 日志 23:15:55 有一次启动，2 分半后就是那批数据 —— 对得上。
