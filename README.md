@@ -179,6 +179,10 @@ tools\verify-unlock.ps1
   — 同型号的 Linux 侧完整案例，FWSEC/SEC2 流程的交叉参考
 - [`Zagitta/gpu-unlock`](https://github.com/Zagitta/gpu-unlock) — 机制的最初实现
 
-## 恢复手册（2026-10-26）
+## 状态：已停止（2026-10-26）
 
-ESP 接管导致开机卡在 boot 阶段的事故、三条恢复路线与决策记录：见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
+解锁机制跑通并验证过，但**没有找到一种既不依赖 U 盘、又不会把机器卡在 boot 的办法**，
+因此已回到 stock。停止时的确切位置、排除过的原因、唯一的存活线索与重试前提：
+见 [docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
+
+ESP 接管的事故与三条恢复路线：[docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
