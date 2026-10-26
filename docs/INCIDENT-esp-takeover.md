@@ -1,8 +1,7 @@
 # 事故记录：ESP 接管导致开机卡住（2026-10-25/26）
 
 > 状态：**已决定不再使用 ESP 接管**，恢复方式已确认。本文记录现象与判据。
-> 恢复步骤与取证清单见 [`TONIGHT-RECOVERY.md`](TONIGHT-RECOVERY.md)；
-> 其中标 `待补` 的字段在那份清单 §2 里逐条采集后回填本文件。
+> 恢复步骤见下；标 `待补` 的字段在恢复后采集回填。
 
 ## 现象
 
@@ -46,7 +45,7 @@ firmware -> \EFI\Microsoft\Boot\bootmgfw.efi      (被换成解锁 EFI)
 `MarvinFS/rtx4090-uefi` 干脆不走这条路（独立启动项 + 专用分区，是它唯一验证过的形态）；
 `wyx1277-.../gpu-unlock-4070tis-ad103-win` 走固件启动项 + 开关，并提供 boot log 的 `FINAL` 行用于定位。
 
-待补（用 `TONIGHT-RECOVERY.md` §2 采集）：`屏幕停在哪一屏 / 有没有 RUNxxxx.TXT / 安装的 EFI 版本 /
+待补（恢复后采集）：`屏幕停在哪一屏 / 有没有 RUNxxxx.TXT / 安装的 EFI 版本 /
 ESP 剩余空间 / AD104-ASSETS 文件数`。
 
 ## 恢复步骤（已确认可用）

@@ -181,5 +181,4 @@ tools\verify-unlock.ps1
 
 ## 恢复手册（2026-10-26）
 
-ESP 接管导致开机卡在 boot 阶段的事故与恢复：见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)；
-进入系统之后的核对、取证与决策清单：见 [docs/TONIGHT-RECOVERY.md](docs/TONIGHT-RECOVERY.md)。
+ESP 接管导致开机卡在 boot 阶段的事故、三条恢复路线与决策记录：见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
