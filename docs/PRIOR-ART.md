@@ -165,3 +165,15 @@ GuLog("release: residual edges on GPU handles=%zu expected=0\n",(size_t)residual
   的「只比指针」严格。值得做，但会改变 `Alive()` 的语义，风险大于收益。
 - **所有观测都在 `TPL_NOTIFY` 内**。本移植只在 `Snapshot()` 前后 `RaiseTPL`，`Alive()` 和
   `Gops()` 在 TPL 外跑。这是真实缺口，但在单核启动阶段观测到竞态的概率很低。
+
+## 补充：Windows 方向的两个直接对照（2026-10-26）
+
+- [Goldlionren/gpu-unlock-4080s](https://github.com/Goldlionren/gpu-unlock-4080s)：单块 AD103
+  4080 SUPER 的 **Windows/UEFI** 移植，走完整流程（自签 EFI + 证书登记进固件 db + Secure Boot
+  开启），并给出 matched 性能表。对本移植最有参考价值的一点：它把 FP8 E4M3 GEMM 也纳入了测量
+  （199.4 → 310.4 TF/s 与 199.4 → 298.7，两次），但作者自己注明 FP8 波动大、**不用于**判定。
+- [miounet11/gpu-unlock-site](https://github.com/miounet11/gpu-unlock-site)：gpu-unlock.com
+  文档站（Ampere/Ada/Turing，7 语言），适合作为"给别人的入口页"而不是代码参考。
+
+顺带一条方法论：本仓库与上游现在都用 `mma.m16n8k32` e4m3 的寄存器探针量 FP8 发射率，
+与 GEMM 数字不可混比 —— 前者是发射率上限，后者在固定功耗下会被功率墙压到 1.5× 上下。
