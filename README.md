@@ -51,18 +51,18 @@
 解锁后实际改的寄存器，`RUN0005` 日志原文（`H:\AD104-UNLOCK\RUN0005.TXT`，行号照抄）：
 
 ```
-:110  permission before-firmware: FEAT[0x823804]=0xffffff8f before=0xffffff8f expected=0xffffffff required=1 valid=1
-:111  before-firmware: readout1=0x410080 fields=0 0 2 0 0 2 0 2 0 valid=1 full=0
-:148  permission after-payload:  FEAT[0x823804]=0xffffffff before=0xffffff8f expected=0xffffffff required=1 valid=1
-:151  selector read:   SS0=0x7300036 expected_unlock=0x88888888
-:152  selector write:  SS0=0x88888888
+:110  AD102 permission before-firmware: FEAT[0x823804]=0xffffff8f before=0xffffff8f expected=0xffffffff required=1 valid=1 pci=0x270510de chip=0x193000a1
+:111  AD102 before-firmware: readout1=0x410080 fields=0 0 2 0 0 2 0 2 0 valid=1 full=0
+:148  AD102 permission after-payload: FEAT[0x823804]=0xffffffff before=0xffffff8f expected=0xffffffff required=1 valid=1 pci=0x270510de chip=0x193000a1
+:151  selector read: SS0=0x7300036 expected_unlock=0x88888888
+:152  selector write: SS0=0x88888888
 :153  selector result: SS0=0x88888888 expected=0x88888888 matched=1
-:154  selector read:   SS1=0x1 expected_unlock=0x8
-:155  selector write:  SS1=0x8
+:154  selector read: SS1=0x1 expected_unlock=0x8
+:155  selector write: SS1=0x8
 :156  selector result: SS1=0x8 expected=0x8 matched=1
-:157  selectors-applied: readout1=0 fields=0 0 0 0 0 0 0 0 0 valid=1 full=1
+:157  AD102 selectors-applied: readout1=0 fields=0 0 0 0 0 0 0 0 0 valid=1 full=1
 :170  post-FLR SEC2 reset released, GSP halted, BME=0 pending=0 WPR2=1ffffe00:00000000 SS0=88888888 SS1=00000008
-:174  permission post-FLR: FEAT[0x823804]=0xffffffff before=0xffffff8f expected=0xffffffff required=1 valid=1
+:174  AD102 permission post-FLR: FEAT[0x823804]=0xffffffff before=0xffffff8f expected=0xffffffff required=1 valid=1 pci=0x270510de chip=0x193000a1
 ```
 
 `readout1`（`FEAT_READOUT_1`，`0x00823818`）是**九个 3-bit 字段**，掩码 `0x07ffffff`
