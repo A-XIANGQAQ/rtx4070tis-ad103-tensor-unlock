@@ -300,7 +300,7 @@ tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\
 `bootmgfw.efi`，Windows 起来后立刻测到 `f16/f32 ÷ f16/f16 = 1.000`，对照组不动，
 数值校验 `max_abs=0`。同一次 boot 内换时间点再测，比值仍是 1.001。
 
-修掉的三处（分支 `cb3691b`）：
+修掉的三处（分支 `cb3691b`；之后的 `c794f3e` 只改文档）：
 
 | # | 症状 | 根因 |
 |---|---|---|

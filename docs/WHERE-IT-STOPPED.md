@@ -246,7 +246,7 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
 ## 拉起来需要什么
 
 - `windows/ad103-2705` 分支：`https://github.com/A-XIANGQAQ/gpu-unlock-ada/tree/ad103-2705/windows/ad103-2705`
-  基于上游 `4e7fefc`，HEAD `cb3691b`
+  基于上游 `4e7fefc`；三个 bug 的修复在 `cb3691b`，之后 `c794f3e` 只改文档
 - 本仓库 `docs/PITFALLS.md`：11 个移植阻塞点 + 4 个「拆完之后还要验证」的坑
   （6b 身份要缓存、10b 停机要可见、10c 关日志≠故障、10d `%p` 会静默整份日志），
   外加 #12 cuBLAS alpha 宽度，每条「症状 → 原因 → 改法」
