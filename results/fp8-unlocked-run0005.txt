@@ -1,0 +1,11 @@
+# RUN0005 verification - third independent hardware unlock, U-disk manual path
+# captured 2026-10-26 23:52, boot 23:45:44, log H:\AD104-UNLOCK\RUN0005.TXT
+# EFI sha256 76fee0365338977da4de2e29593e1f8ec8fda0447d0364b7240632ca985f7d29
+# driver 621.01, VBIOS 95.03.45.40.c5, power limit 285 W, PCIe Gen4 x16
+# Windows 11 10.0.26300, idle GPU, clocks_throttle_reasons 0x1 (gpu_idle only)
+# NVIDIA GeForce RTX 4070 Ti SUPER, 66 SMs, sm_89, iters=20000 reps=5
+mode          best TF/s  median TF/s   runs
+e4m3/f32         319.58       314.42   319.6/313.8/308.4/318.2/314.4
+
+(instruction issue rate, not a GEMM; compare to mma_bench f16/f32,
+ not to the report's 59.3 TF/s CUTLASS number)

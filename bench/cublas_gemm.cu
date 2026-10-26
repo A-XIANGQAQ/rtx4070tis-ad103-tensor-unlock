@@ -33,21 +33,32 @@ __global__ void f32_to_h(const float *src, __half *dst, long n){
 __global__ void f32_to_b(const float *src, __nv_bfloat16 *dst, long n){
     long i=(long)blockIdx.x*blockDim.x+threadIdx.x; if(i<n) dst[i]=__float2bfloat16(src[i]); }
 
+// A GEMM that yields an all-zero C is not a GEMM. That is exactly what happens
+// when the alpha pointer's width does not match the compute type: cuBLAS reads
+// alpha==0 and returns in microseconds, which then looks like 4000+ TF/s.
+template<typename T>
+__global__ void count_nz(const T *p, long n, int *out){
+    long i=(long)blockIdx.x*blockDim.x+threadIdx.x;
+    if(i<n && p[i]!=T(0)) atomicAdd(out,1); }
+
 static cublasHandle_t H;
 static cublasComputeType_t gCompute;
 static cudaDataType_t gIn, gOut;
 
-static double run(int N,int iters,void *A,void *B,void *C){
-    float alpha=1.f,beta=0.f;
+// cuBLAS reads alpha/beta with the WIDTH OF THE COMPUTE TYPE. Passing a float*
+// while the compute type is CUBLAS_COMPUTE_16F makes cuBLAS read the low two
+// bytes of 1.0f (0x0000) as an __half == 0.0, so every GEMM produced a zero
+// matrix at ~4000 TF/s. Both pointers must match gCompute exactly.
+static double run(int N,int iters,void *A,void *B,void *C,const void *alpha,const void *beta){
     BK(cublasGemmEx(H,CUBLAS_OP_N,CUBLAS_OP_N,N,N,N,
-                    &alpha,A,gIn,N,B,gIn,N,&beta,C,gOut,N,
+                    alpha,A,gIn,N,B,gIn,N,beta,C,gOut,N,
                     gCompute,CUBLAS_GEMM_DEFAULT));
     CK(cudaDeviceSynchronize());
     cudaEvent_t t0,t1; CK(cudaEventCreate(&t0)); CK(cudaEventCreate(&t1));
     CK(cudaEventRecord(t0));
     for(int i=0;i<iters;i++)
         BK(cublasGemmEx(H,CUBLAS_OP_N,CUBLAS_OP_N,N,N,N,
-                        &alpha,A,gIn,N,B,gIn,N,&beta,C,gOut,N,
+                        alpha,A,gIn,N,B,gIn,N,beta,C,gOut,N,
                         gCompute,CUBLAS_GEMM_DEFAULT));
     CK(cudaEventRecord(t1)); CK(cudaEventSynchronize(t1));
     float ms=0.f; CK(cudaEventElapsedTime(&ms,t0,t1));
@@ -98,11 +109,15 @@ int main(int argc,char **argv){
         {"fp32",         CUBLAS_COMPUTE_32F, CUDA_R_32F, CUDA_R_32F, A32,B32,C32},
     };
 
+    const float fAlpha=1.f, fBeta=0.f;
+    const __half hAlpha=__float2half(1.f), hBeta=__float2half(0.f);
     std::printf("%-14s %12s %12s   runs\n","mode","best TF/s","median TF/s");
     for(auto &c:cases){
         gCompute=c.comp; gIn=c.in; gOut=c.out;
+        const void *pa=&fAlpha,*pb=&fBeta;
+        if(c.comp==CUBLAS_COMPUTE_16F){ pa=&hAlpha; pb=&hBeta; }
         std::vector<double> s;
-        for(int r=0;r<reps;r++) s.push_back(run(N,iters,c.A,c.B,c.C));
+        for(int r=0;r<reps;r++) s.push_back(run(N,iters,c.A,c.B,c.C,pa,pb));
         std::sort(s.begin(),s.end());
         std::printf("%-14s %12.2f %12.2f   ",c.name,s.back(),s[s.size()/2]);
         for(size_t i=0;i<s.size();i++) std::printf("%s%.1f",i?"/":"",s[i]);
@@ -110,6 +125,17 @@ int main(int argc,char **argv){
         CK(cudaDeviceSynchronize());
         cudaError_t e=cudaGetLastError();
         if(e!=cudaSuccess) std::printf("   (kernel error: %s)\n",cudaGetErrorString(e));
+        BK(cublasGemmEx(H,CUBLAS_OP_N,CUBLAS_OP_N,N,N,N,
+                        pa,c.A,gIn,N,c.B,gIn,N,pb,c.C,gOut,N,
+                        gCompute,CUBLAS_GEMM_DEFAULT));
+        CK(cudaDeviceSynchronize());
+        { int *dnz=nullptr; CK(cudaMalloc(&dnz,sizeof(int))); CK(cudaMemset(dnz,0,sizeof(int)));
+          if(c.out==CUDA_R_32F) count_nz<<<(int)grd,blk>>>((const float*)c.C,n,dnz);
+          else                  count_nz<<<(int)grd,blk>>>((const __half*)c.C,n,dnz);
+          CK(cudaDeviceSynchronize());
+          int hnz=0; CK(cudaMemcpy(&hnz,dnz,sizeof(int),cudaMemcpyDeviceToHost));
+          CK(cudaFree(dnz));
+          std::printf("   nonzero C: %d / %ld%s\n",hnz,(long)n,hnz?"":"   <-- BROKEN, alpha was read as zero"); }
     }
 
     // bf16 pass (separate because it needs its own conversion)
@@ -120,14 +146,28 @@ int main(int argc,char **argv){
     CK(cudaDeviceSynchronize());
     gCompute=CUBLAS_COMPUTE_32F; gIn=CUDA_R_16BF; gOut=CUDA_R_32F;
     std::vector<double> s;
-    for(int r=0;r<reps;r++) s.push_back(run(N,iters,Ab,Bb,C32));
+    for(int r=0;r<reps;r++) s.push_back(run(N,iters,Ab,Bb,C32,&fAlpha,&fBeta));
     std::sort(s.begin(),s.end());
     std::printf("%-14s %12.2f %12.2f   ","bf16/fp32acc",s.back(),s[s.size()/2]);
     for(size_t i=0;i<s.size();i++) std::printf("%s%.1f",i?"/":"",s[i]);
     std::printf("\n");
+    BK(cublasGemmEx(H,CUBLAS_OP_N,CUBLAS_OP_N,N,N,N,
+                    &fAlpha,Ab,gIn,N,Bb,gIn,N,&fBeta,C32,gOut,N,
+                    gCompute,CUBLAS_GEMM_DEFAULT));
+    CK(cudaDeviceSynchronize());
+    { int *dnz=nullptr; CK(cudaMalloc(&dnz,sizeof(int))); CK(cudaMemset(dnz,0,sizeof(int)));
+      count_nz<<<(int)grd,blk>>>((const float*)C32,n,dnz);
+      CK(cudaDeviceSynchronize());
+      int hnz=0; CK(cudaMemcpy(&hnz,dnz,sizeof(int),cudaMemcpyDeviceToHost));
+      CK(cudaFree(dnz));
+      std::printf("   nonzero C: %d / %ld%s\n",hnz,(long)n,hnz?"":"   <-- BROKEN, alpha was read as zero"); }
 
     BK(cublasDestroy(H));
     CK(cudaFree(A32)); CK(cudaFree(B32)); CK(cudaFree(A16)); CK(cudaFree(B16));
     CK(cudaFree(C32)); CK(cudaFree(C16)); CK(cudaFree(Ab)); CK(cudaFree(Bb));
     return 0;
 }
+
+
+
+

@@ -240,6 +240,9 @@ static BOOLEAN GpuChild(EFI_HANDLE h) {
 
 同理适用于任何「拆完之后还要验证」的检查：**先取身份，再拆，再拿身份比对**。
 
+**已在本机验证**（`RUN0005`，2026-10-26）：`preflight[6b] CacheGpuChildren=0
+children=3`，全文再无 `GPU graph missing`，`Expected(3,FALSE)` 通过。
+
 ---
 
 ## 7. `GuMsiReadyForWindows()` 里的 `PMC_BOOT_0` pin
@@ -375,6 +378,9 @@ VOID GuBootHalt(VOID) {
 
 `GuBootSilence()` 建立的不变量应该是「静默只覆盖事务体，出口一定恢复」。
 
+**已在本机验证**（`RUN0005`）：日志末尾没有 `STOPPED.`，说明这次没走到 halt；
+这条改动的价值在「下次真被拒时能看见」，两次成功运行都不构成对它的验证。
+
 ### 10c. 关日志被记成硬件故障，把每一道后续门都毒死
 
 **症状**：日志最后一行是 `TRANSACTION OK`，后面没有任何解释，`fault=1`。
@@ -425,6 +431,30 @@ stage="close-USB-log";s=GuBootClose();if(s!=EFI_SUCCESS||Gu.fault)goto failed;
 **诊断原则**：一条 `OK` 后面什么都没有，不是"成功之后正常结束"，
 是"失败发生在没有任何人能看到的地方"。
 
+**已在本机验证**（`RUN0005`）：末行变为
+`TRANSACTION OK: … handoff check passed; benchmark still required`，
+`handoff check passed` 这几个字出现在日志里，说明检查确实跑在关日志之前。
+
+### 10d. 把 `%p` 写进日志格式化器会导致整份日志静默
+
+**症状**：日志在某一行之后突然没了，`fault=1`，后面什么都写不进去。
+
+**原因**：`boot_io.c` 里的格式化器是受限实现，只认 `%s %u %x %X`（含 `z`/`ll`/
+`#`/宽度）。`%p` 走到 `GuFormatV()` 的 default 分支返回 -1，`GuLog` 据此
+`Gu.fault=TRUE` 后返回 —— 于是**从那一行开始，每一行日志都被丢掉**。
+
+**改法**：指针一律 `%#llx` + `(unsigned long long)(UINTN)`：
+
+```c
+GuLog("gop=%#llx\n", (unsigned long long)(UINTN)Plan.gop);
+```
+
+同一族的坑：`GuLog` 内部缓冲区固定大小，格式化结果超长（`n>=sizeof(buffer)`）
+同样置 fault 并丢弃。写长行之前先算一下。
+
+**诊断原则**：日志"自然地"停在某一行时，先怀疑那一行本身，不要先怀疑它后面
+的逻辑没跑。
+
 ---
 
 ## 11. 测量必须在空闲 GPU 上做
@@ -441,3 +471,48 @@ nvidia-smi --query-compute-apps=pid,process_name
 `power.draw` 应该接近待机功耗。这个坑很容易被误读成「解锁把卡搞坏了」。
 
 留在 `results/cublas-contaminated.txt` 就是因为它是这个坑的原始证据。
+
+## 12. cuBLAS 按**计算类型**的宽度读 `alpha`/`beta`
+
+**症状**：`fp16/fp16acc` 报出 4000–4700 TF/s，比物理峰值高一个数量级以上；
+换成别的 `computeType` 就正常。
+
+**原因**：`cublasGemmEx` 的 `alpha`/`beta` 是 `const void *`，cuBLAS 按
+**`computeType` 的宽度**去读，不是按你传的变量类型。传 `float 1.0f`、同时把
+`computeType` 设成 `CUBLAS_COMPUTE_16F` 时，cuBLAS 只取低两字节 —— `1.0f` 的
+低两字节恰好是 `0x0000`，于是 `alpha` 被读成 `__half 0.0`。结果每个输出元素都是
+`0*A*B + 0*C = 0`，**矩阵全零**，kernel 的实际工作量塌掉，计时器被自己的 bug 缩短。
+
+本机决定性证据（`bench/probe_f16acc.cu`，同一份数据同一张卡）：
+
+```
+float-alpha  (float* as compute16F scales):  4188.85 TF/s   (0.262 ms/gemm)
+   nonzero C: 0 / 67108864        <-- all zeros
+half-alpha   (correct compute16F scales)  :   143.77 TF/s   (7.648 ms/gemm)
+   nonzero C: 67108852 / 67108864
+```
+
+**改法**：`alpha`/`beta` 的类型跟着 `computeType` 走。
+
+```c
+const float  fAlpha=1.f, fBeta=0.f;
+const __half hAlpha=__float2half(1.f), hBeta=__float2half(0.f);
+const void *pa=&fAlpha, *pb=&fBeta;
+if(c.comp==CUBLAS_COMPUTE_16F){ pa=&hAlpha; pb=&hBeta; }
+```
+
+并且**每个用例都验证输出非零** —— 一次不计时的 GEMM + `count_nz`：
+
+```cuda
+template<typename T> __global__ void count_nz(const T *p,long n,int *out){
+  long i=(long)blockIdx.x*blockDim.x+threadIdx.x;
+  if(i<n&&p[i]!=T(0))atomicAdd(out,1);
+}
+```
+
+全零时打出 `<-- BROKEN`。**这条闸门是必须的**：如果没有它，这个 bug 只会表现为
+"数字好得不像话"，很容易被当成解锁效果写进结论。
+
+**教训**：性能数字超出物理峰值时，先查是不是活儿根本没干，再查是不是跑得真快。
+`results/cublas-contaminated.txt` 之外的旧 cuBLAS 采样（`fp16/fp16acc` 4588/4744）
+就是被这个 bug 污染的数据，已重采。

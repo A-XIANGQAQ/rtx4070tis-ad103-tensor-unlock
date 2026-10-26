@@ -5,50 +5,128 @@
   judged against the recorded stock baseline.
 
 .DESCRIPTION
-  Runs the three acceptance criteria from the plan:
-    1. transaction log  result=0 safe=1 ... flrs=1 DMA_live=0
-    2. RM/issue-rate    f16/f32 and bf16/f32 ~2x, four control modes unchanged
-    3. numerics         validate_gemm failures=0
+  Four checks:
+    1. transaction log   result=0 safe=1 ... flrs=1 DMA_live=0
+    2. issue rate        f16/f32 and bf16/f32 ~2x, four control modes unchanged
+    2b. FP8             e4m3/f32 ~1.9x (this DOES move -- see the note in section 2b)
+    3. numerics         gemm_check failures=0
 
-  Copies the benchmarks out of the AV-monitored folder before running them,
-  because real-time AV keeps deleting freshly compiled unsigned executables.
+  Ratio is the criterion, never the absolute number. A downclocked card reports
+  f16/f32 ~= 88 TF/s, which is exactly the stock value; judging on absolutes
+  will call a working unlock "not applied".
+
+.PARAMETER LogRoot
+  Drive letter holding AD104-UNLOCK\RUNxxxx.TXT (default H:, the USB stick).
+
+.PARAMETER GpuIndex
+  nvidia-smi GPU index, for the clock / throttle readout.
 
 .EXAMPLE
   .\verify-unlock.ps1
-  .\verify-unlock.ps1 -RunNumber 1
+  .\verify-unlock.ps1 -RunNumber 5
+  .\verify-unlock.ps1 -LogRoot W: -RunNumber 1
 #>
 param(
     [int]$RunNumber = 0,
     [int]$Iters = 20000,
-    [int]$Reps = 3,
-    [string]$Work = "$env:TEMP\gpu-verify"
+    [int]$Reps = 5,
+    [string]$LogRoot = 'H:',
+    [int]$GpuIndex = 0,
+    [string]$Work = "$env:TEMP\gpu-verify",
+    [string]$BenchDir,
+    [string]$GemmCheck
 )
 $ErrorActionPreference = 'Continue'
-$ErrorActionPreference = 'Continue'
-$root = (Join-Path $PSScriptRoot '..')
-$benchDir = Join-Path $root 'bench'
-$capDir = Join-Path $root 'captures'
-$stockFile = Join-Path $capDir 'mma-stock.txt'
+$root   = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$resDir = Join-Path $root 'results'
+$mmaStock = Join-Path $resDir 'mma-baseline.txt'
+$fp8Stock = Join-Path $resDir 'fp8-baseline.txt'
 
 function Rule($t) { Write-Host ("`n" + ("=" * 68)); Write-Host "  $t"; Write-Host ("=" * 68) }
+
+# The .exe files are deliberately not in this repo (unsigned binaries in git are a
+# nuisance). Look in the obvious places and say where the found one came from.
+function Find-Bench([string]$name) {
+    $roots = @($BenchDir, (Join-Path $root 'bench'), 'G:\workspace\rtx2705\bench') |
+             Where-Object { $_ } | Select-Object -Unique
+    foreach ($d in $roots) {
+        $p = Join-Path $d $name
+        if (Test-Path $p) { return (Resolve-Path $p).Path }
+    }
+    return $null
+}
+$probe = Find-Bench 'mma_bench.exe'
+if ($probe) { $benchDir = Split-Path $probe -Parent }
+else        { $benchDir = if ($BenchDir) { $BenchDir } else { Join-Path $root 'bench' } }
+Write-Host "`nbench dir: $benchDir" -ForegroundColor DarkGray
+
+function Copy-And-Run($src, [string[]]$argv) {
+    if (-not (Test-Path $src)) { return $null }
+    if (-not (Test-Path $Work)) { New-Item -ItemType Directory -Force -Path $Work | Out-Null }
+    # AV keeps deleting freshly compiled unsigned exes; run from a copy.
+    $exe = Join-Path $Work ("$([IO.Path]::GetFileNameWithoutExtension($src))_" +
+                            "$([guid]::NewGuid().ToString('N').Substring(0,8)).exe")
+    Copy-Item $src $exe -Force
+    Start-Sleep -Milliseconds 800
+    return (& $exe @argv 2>&1 | Out-String)
+}
+
+function Parse-Bench($text) {
+    $h = @{}
+    if (-not $text) { return $h }
+    foreach ($line in ($text -split "`n")) {
+        if ($line -match '^\s*(\S+)\s+([\d.]+)\s') { $h[$Matches[1].Trim()] = [double]$Matches[2] }
+    }
+    return $h
+}
+
+# ---------------------------------------------------------------- 0. clocks
+Rule "0/4  clock state (decides whether the numbers are usable at all)"
+$throttled = $false
+$smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+if ($smi) {
+    $q = & nvidia-smi --query-gpu=clocks.sm,clocks.max.sm,power.draw,power.limit,clocks_throttle_reasons.active `
+                      --format=csv,noheader -i $GpuIndex 2>&1 | Out-String
+    Write-Host ("  " + $q.Trim().Replace("`n", "`n  "))
+    if ($q -match '0x0*[1-9a-fA-F][0-9a-fA-F]*' -and $q -notmatch ', 0x0\b') {
+        # active != 0 means at least one reason is asserted
+        $reason = [regex]::Match($q, '(0x[0-9a-fA-F]+)\s*$').Groups[1].Value
+        if ($reason -and $reason -ne '0x0' -and $reason -ne '0x0000000000000001') {
+            $throttled = $true
+        }
+    }
+    if ($throttled) {
+        Write-Host "  WARNING: throttle reasons assert something other than gpu_idle." -ForegroundColor Yellow
+        Write-Host "  Absolute TF/s will be depressed. Ratio is still valid; absolutes are not." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  nvidia-smi not on PATH - skipping the clock readout" -ForegroundColor DarkGray
+}
+$busy = Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProcessName -match '^(ffmpeg|python|pythonw|ollama|lmstudio|comfyui|java|chrome)$' }
+if ($busy) {
+    Write-Host ("  WARNING: possibly GPU-busy processes: " + (($busy.ProcessName | Sort-Object -Unique) -join ', ')) -ForegroundColor Yellow
+    Write-Host "  See docs/PITFALLS.md #11 -- a game holding the GPU once made f16/f32 collapse to 2.0." -ForegroundColor Yellow
+}
 
 # ---------------------------------------------------------------- 1. log
 Rule "1/4  transaction log"
 $run = $null
+$logDir = Join-Path $LogRoot 'AD104-UNLOCK'
 if ($RunNumber -gt 0) {
-    $logRoot = if($Usb){ $Usb } else { 'H:' }
-$cand = Join-Path $logRoot ("AD104-UNLOCK\RUN{0:D4}.TXT" -f $RunNumber)
+    $cand = Join-Path $logDir ("RUN{0:D4}.TXT" -f $RunNumber)
     if (Test-Path $cand) { $run = $cand }
 } else {
-    $all = Get-ChildItem (Join-Path $logRoot 'AD104-UNLOCK') -Filter 'RUN*.TXT' -ErrorAction SilentlyContinue |
+    $all = Get-ChildItem $logDir -Filter 'RUN*.TXT' -ErrorAction SilentlyContinue |
            Sort-Object LastWriteTime -Descending
     if ($all) { $run = $all[0].FullName }
 }
+$ok1 = $false
 if (-not $run) {
-    Write-Host "  no RUNxxxx.TXT on the USB - the EFI never reached the transaction" -ForegroundColor Red
-    Write-Host "  (press U at the prompt; S/Esc/30s goes straight to Windows without unlocking)"
+    Write-Host "  no RUNxxxx.TXT under $logDir" -ForegroundColor Red
+    Write-Host "  Either the EFI never reached the transaction, or you booted without pressing U."
 } else {
-    Write-Host "  log: $run"
+    Write-Host "  log: $run  ($((Get-Item $run).Length) B, $((Get-Item $run).LastWriteTime))"
     $txt = Get-Content $run -Raw
     $m = [regex]::Match($txt, 'Transaction result=(-?\d+) safe=(\d) retained=(\d) started=(\d) quiesced=(\d) flrs=(\d) DMA_live=(\d)')
     if ($m.Success) {
@@ -57,129 +135,141 @@ if (-not $run) {
         $started = $m.Groups[4].Value; $quiesced = $m.Groups[5].Value
         $flrs = $m.Groups[6].Value; $dma = $m.Groups[7].Value
         Write-Host "  result=$res  safe=$safe  retained=$ret  started=$started  quiesced=$quiesced  flrs=$flrs  DMA_live=$dma"
-        $ok1 = ($res -eq 0 -and $safe -eq '1' -and $ret -eq '0' -and $started -eq '1' -and $quiesced -eq '1' -and $flrs -eq '1' -and $dma -eq '0')
+        $ok1 = ($res -eq 0 -and $safe -eq '1' -and $ret -eq '0' -and $started -eq '1' -and
+                $quiesced -eq '1' -and $flrs -eq '1' -and $dma -eq '0')
         if ($ok1) { Write-Host "  CRITERION 1: PASS" -ForegroundColor Green }
-        else { Write-Host "  CRITERION 1: FAIL" -ForegroundColor Red }
+        else      { Write-Host "  CRITERION 1: FAIL" -ForegroundColor Red }
     } else {
-        Write-Host "  no 'Transaction result=' line found. Last 20 lines:" -ForegroundColor Yellow
+        Write-Host "  no 'Transaction result=' line. Last 20 lines:" -ForegroundColor Yellow
         ($txt -split "`n" | Select-Object -Last 20) | ForEach-Object { "    $_" }
-        $ok1 = $false
     }
-    foreach ($k in 'unlocked', 'FAIL', 'refused', 'halted', 'retained') {
+    # The three historical failure shapes -- any of these means the run did not hand off.
+    foreach ($k in 'graph missing', 'finish incomplete', 'GPU finish after close', 'STOP:') {
         $hits = Select-String -Path $run -Pattern $k -SimpleMatch -ErrorAction SilentlyContinue
-        if ($hits) { Write-Host ("  mentions '{0}': {1} line(s)" -f $k, $hits.Count) -ForegroundColor DarkGray }
+        if ($hits) { Write-Host ("  mentions '{0}': {1} line(s)" -f $k, $hits.Count) -ForegroundColor Red }
+    }
+    foreach ($k in 'handoff check passed', 'CacheGpuChildren') {
+        $hits = Select-String -Path $run -Pattern $k -SimpleMatch -ErrorAction SilentlyContinue
+        if ($hits) { Write-Host ("  mentions '{0}': yes" -f $k) -ForegroundColor DarkGray }
     }
 }
 
 # ---------------------------------------------------------------- 2. bench
-Rule "2/4  instruction issue rate"
-if (-not (Test-Path $Work)) { New-Item -ItemType Directory -Force -Path $Work | Out-Null }
-$exe = Join-Path $Work "bench_$([guid]::NewGuid().ToString('N').Substring(0,8)).exe"
-$src = Join-Path $benchDir 'mma_bench.exe'
-if (-not (Test-Path $src)) { throw "mma_bench.exe not found under $root\bench" }
-Copy-Item $src $exe -Force
-Start-Sleep -Milliseconds 800
-$out = & $exe $Iters $Reps 2>&1 | Out-String
-$out.Trim() | ForEach-Object { "  $_" }
-$now = @{}
-foreach ($line in ($out -split "`n")) {
-    if ($line -match '^\s*(\S+)\s+([\d.]+)\s') { $now[$Matches[1].Trim()] = [double]$Matches[2] }
-}
-Write-Host ""
-if (Test-Path $stockFile) {
-    $stock = @{}
-    foreach ($line in (Get-Content $stockFile)) {
-        if ($line -match '^\s*(\S+)\s+([\d.]+)\s') { $stock[$Matches[1].Trim()] = [double]$Matches[2] }
-    }
-    Write-Host ("  {0,-10}{1,10}{2,10}{3,9}   {4}" -f 'mode','stock','now','ratio','verdict')
-    Write-Host ("  " + ("-" * 58))
-    $gainOk = $true; $ctrlOk = $true
-    foreach ($mode in 'f16/f32','bf16/f32','f16/f16','s8/s32','dp4a','ffma') {
-        if (-not ($now.ContainsKey($mode) -and $stock.ContainsKey($mode))) { continue }
-        $a = $stock[$mode]; $b = $now[$mode]; $r = if ($a) { $b / $a } else { 0 }
-        $isGain = $mode -in @('f16/f32','bf16/f32')
-        if ($isGain) {
-            $v = if ($r -gt 1.3) { 'GAIN' } else { 'NO GAIN' }
-            if ($r -le 1.3) { $gainOk = $false }
-        } else {
-            $v = if ($r -gt 0.85 -and $r -lt 1.15) { 'control ok' } else { 'CONTROL DRIFTED' }
-            if ($r -le 0.85 -or $r -ge 1.15) { $ctrlOk = $false }
-        }
-        Write-Host ("  {0,-10}{1,10:F1}{2,10:F1}{3,9:F3}   {4}" -f $mode, $a, $b, $r, $v)
-    }
-    if ($gainOk -and $ctrlOk) { Write-Host "`n  CRITERION 2: PASS - the two FP32-accumulate modes doubled, controls did not move" -ForegroundColor Green }
-    elseif ($gainOk)         { Write-Host "`n  CRITERION 2: PARTIAL - gain present but a control mode moved" -ForegroundColor Yellow }
-    else                     { Write-Host "`n  CRITERION 2: FAIL - no gain on f16/f32 or bf16/f32" -ForegroundColor Red }
+Rule "2/4  instruction issue rate (criterion = ratio, not absolute)"
+$out = Copy-And-Run (Find-Bench 'mma_bench.exe') @($Iters, $Reps)
+if (-not $out) {
+    Write-Host "  mma_bench.exe not found under $benchDir" -ForegroundColor Red
+    $ok2 = $false
 } else {
-    Write-Host "  stock baseline not found at $stockFile - compare manually" -ForegroundColor Yellow
+    $out.Trim() | ForEach-Object { "  $_" }
+    $now = Parse-Bench $out
+    if (Test-Path $mmaStock) {
+        $stock = Parse-Bench (Get-Content $mmaStock -Raw)
+        Write-Host ""
+        Write-Host ("  {0,-10}{1,10}{2,10}{3,9}   {4}" -f 'mode', 'stock', 'now', 'ratio', 'verdict')
+        Write-Host ("  " + ("-" * 58))
+        $gainOk = $true; $ctrlOk = $true
+        foreach ($mode in 'f16/f32', 'bf16/f32', 'f16/f16', 's8/s32', 'dp4a', 'ffma') {
+            if (-not ($now.ContainsKey($mode) -and $stock.ContainsKey($mode))) { continue }
+            $a = $stock[$mode]; $b = $now[$mode]; $r = if ($a) { $b / $a } else { 0 }
+            if ($mode -in @('f16/f32', 'bf16/f32')) {
+                $v = if ($r -gt 1.3) { 'GAIN' } else { 'NO GAIN' }
+                if ($r -le 1.3) { $gainOk = $false }
+            } else {
+                $v = if ($r -gt 0.85 -and $r -lt 1.15) { 'control ok' } else { 'CONTROL DRIFTED' }
+                if ($r -le 0.85 -or $r -ge 1.15) { $ctrlOk = $false }
+            }
+            Write-Host ("  {0,-10}{1,10:F1}{2,10:F1}{3,9:F3}   {4}" -f $mode, $a, $b, $r, $v)
+        }
+        # Absolute-free verdict: the two FP32-accumulate modes should be as fast as
+        # the FP16-accumulate mode once unlocked. That comparison survives a downclock
+        # because both sides move together.
+        if ($now.ContainsKey('f16/f32') -and $now.ContainsKey('f16/f16') -and $now['f16/f16']) {
+            $live = $now['f16/f32'] / $now['f16/f16']
+            Write-Host ("`n  live ratio f16/f32 / f16/f16 = {0:F3}   (stock ~0.50, unlocked 1.00)" -f $live)
+            if ($live -ge 0.90)      { Write-Host "  UNLOCKED" -ForegroundColor Green }
+            elseif ($live -le 0.60)  { Write-Host "  STOCK" -ForegroundColor Yellow }
+            else                     { Write-Host "  AMBIGUOUS - rerun on an idle GPU" -ForegroundColor Yellow }
+        }
+        $ok2 = $gainOk -and $ctrlOk
+        if ($ok2)            { Write-Host "`n  CRITERION 2: PASS" -ForegroundColor Green }
+        elseif ($gainOk)     { Write-Host "`n  CRITERION 2: PARTIAL - gain present, a control mode moved" -ForegroundColor Yellow }
+        else                 { Write-Host "`n  CRITERION 2: FAIL - no gain on the FP32-accumulate modes" -ForegroundColor Red }
+    } else {
+        Write-Host "  baseline missing at $mmaStock" -ForegroundColor Yellow
+        $ok2 = $false
+    }
 }
 
 # ---------------------------------------------------------------- 2b. FP8
 Rule "2b/4  FP8 (E4M3) instruction issue rate"
-$fp8src = Join-Path $benchDir 'fp8_mma_bench.exe'
-$fp8stockFile = Join-Path $capDir 'fp8mma-stock.txt'
-if (Test-Path $fp8src) {
-    $fexe = Join-Path $Work "fp8_$([guid]::NewGuid().ToString('N').Substring(0,8)).exe"
-    Copy-Item $fp8src $fexe -Force
-    Start-Sleep -Milliseconds 800
-    $fout = & $fexe $Iters $Reps 2>&1 | Out-String
+# NOTE: FP8 e4m3->f32 IS an FP32-accumulate path and it DOES double.
+# Earlier versions of this script said "FP8 UNCHANGED - expected" and reasoned
+# about DLSS 5 from that. That was wrong: measured 170.63 -> 319.58 TF/s (1.87x).
+$fout = Copy-And-Run (Find-Bench 'fp8_mma_bench.exe') @($Iters, $Reps)
+if (-not $fout) {
+    Write-Host "  fp8_mma_bench.exe not found" -ForegroundColor Yellow
+} else {
     $fout.Trim() | ForEach-Object { "  $_" }
     $nowFp8 = $null
     foreach ($line in ($fout -split "`n")) {
         if ($line -match '^e4m3/f32\s+([\d.]+)') { $nowFp8 = [double]$Matches[1] }
     }
     $stockFp8 = $null
-    if (Test-Path $fp8stockFile) {
-        foreach ($line in (Get-Content $fp8stockFile)) {
+    if (Test-Path $fp8Stock) {
+        foreach ($line in (Get-Content $fp8Stock)) {
             if ($line -match '^e4m3/f32\s+([\d.]+)') { $stockFp8 = [double]$Matches[1] }
         }
     }
     if ($nowFp8 -and $stockFp8) {
         $fr = $nowFp8 / $stockFp8
-        Write-Host ("`n  e4m3/f32   stock {0:F1}  now {1:F1}  ratio {2:F3}" -f $stockFp8, $nowFp8, $fr)
-        if ($fr -lt 1.15 -and $fr -gt 0.85) {
-            Write-Host "  FP8 UNCHANGED - expected. The unlock gates FP16/BF16/TF32 FP32-accumulate only;" -ForegroundColor Green
-            Write-Host "  FP8 was already at full rate (stock 170.6 vs f16/f16 175.6). DLSS 5 runs FP8," -ForegroundColor Green
-            Write-Host "  so DLSS 5 cannot gain from this unlock. This matches the upstream +0.3% finding." -ForegroundColor Green
-        } else {
-            Write-Host "  FP8 MOVED unexpectedly - report this, it contradicts the upstream FP8 result." -ForegroundColor Yellow
-        }
+        Write-Host ("`n  e4m3/f32   stock {0:F2}  now {1:F2}  ratio {2:F3}" -f $stockFp8, $nowFp8, $fr)
+        if ($fr -gt 1.5) { Write-Host "  FP8 DOUBLED - consistent with the FMLA32/IMLA gate opening" -ForegroundColor Green }
+        else             { Write-Host "  FP8 did NOT double - contradicts the expected gate behaviour" -ForegroundColor Red }
     } else {
-        Write-Host "  FP8 baseline or current value missing" -ForegroundColor Yellow
+        Write-Host "  FP8 baseline ($fp8Stock) or current value missing" -ForegroundColor Yellow
     }
-} else {
-    Write-Host "  fp8_mma_bench.exe not found" -ForegroundColor Yellow
 }
 
 # ---------------------------------------------------------------- 3. numerics
 Rule "3/4  numerics"
-$gexe = Join-Path $Work "gemm_$([guid]::NewGuid().ToString('N').Substring(0,8)).exe"
-$gsrc = Join-Path $benchDir 'gemm_check.exe'
-if (-not (Test-Path $gsrc)) { $gsrc = Join-Path $benchDir 'validate_gemm.exe' }
-if (Test-Path $gsrc) {
-    Copy-Item $gsrc $gexe -Force
-    Start-Sleep -Milliseconds 800
-    $g = & $gexe 2>&1 | Out-String
-    $g.Trim() | ForEach-Object { "  $_" }
-    if ($g -match 'failures=(\d+)') {
-        $fails = ($g | Select-String -Pattern 'failures=(\d+)' -AllMatches).Matches |
-                 ForEach-Object { [int]$_.Groups[1].Value } | Measure-Object -Sum
-        if ($fails.Sum -eq 0) { Write-Host "`n  CRITERION 3: PASS - 0 numerical failures" -ForegroundColor Green }
-        else { Write-Host "`n  CRITERION 3: FAIL - $($fails.Sum) numerical failures" -ForegroundColor Red }
-    }
+if (-not $GemmCheck) {
+    $GemmCheck = @(
+        (Find-Bench 'gemm_check.exe'),
+        'G:\workspace\rtx2705\bench\gemm_check.exe'
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $GemmCheck) {
+    Write-Host "  gemm_check.exe not found. Pass -GemmCheck <path>." -ForegroundColor Yellow
 } else {
-    Write-Host "  gemm_check.exe / validate_gemm.exe not found" -ForegroundColor Yellow
+    Write-Host "  using: $GemmCheck"
+    $g = Copy-And-Run $GemmCheck @()
+    if ($g) {
+        $g.Trim() | ForEach-Object { "  $_" }
+        if ($g -match 'failures=(\d+)') {
+            $fails = ($g | Select-String -Pattern 'failures=(\d+)' -AllMatches).Matches |
+                     ForEach-Object { [int]$_.Groups[1].Value } | Measure-Object -Sum
+            if ($fails.Sum -eq 0) { Write-Host "`n  CRITERION 3: PASS - 0 numerical failures" -ForegroundColor Green }
+            else                  { Write-Host "`n  CRITERION 3: FAIL - $($fails.Sum) numerical failures" -ForegroundColor Red }
+        }
+    }
 }
 
 Rule "verdict"
 Write-Host @"
-  Criterion 1 (transaction log)   -> see section 1/3
-  Criterion 2 (issue rate 2x)     -> see section 2/3
-  Criterion 3 (numerics)          -> see section 3/3
+  Criterion 1 (transaction log)  -> see section 1/4
+  Criterion 2 (issue rate)       -> see section 2/4
+  Criterion 3 (numerics)         -> see section 3/4
 
   A green log alone is NOT proof: upstream issue #20 records
   'gpu_unlock: unlocked' with the getter still reporting half rate,
   and issue #4 records a fully green transaction with the hardware
   unchanged on an AD103M part. Only sections 2 and 3 decide this.
+
+  And a big number alone is NOT proof either: see docs/PITFALLS.md #12.
+  bench/cublas_gemm.cu once reported ~4600 TF/s because alpha was read
+  as zero and every GEMM returned an all-zero matrix.
 "@
-Write-Host "`nlogs/bench copies in: $Work" -ForegroundColor DarkGray
+if ($Work -and (Test-Path $Work)) { Write-Host "`nbench copies in: $Work" -ForegroundColor DarkGray }
+
+

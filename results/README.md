@@ -1,24 +1,64 @@
 # 测量条件与可复核性
 
-每个 `.txt` 是一次原始采集，`SHA256SUMS` 是它们的哈希（在 `results/` 下执行
-`sha256sum -c SHA256SUMS` 复核）。
+每个 `.txt` 是一次原始采集，`SHA256SUMS` 是它们的哈希。复核（在 `results/` 下）：
+
+```powershell
+Get-Content SHA256SUMS | ForEach-Object {
+  $want,$f = $_ -split '\s+',2
+  $got = (Get-FileHash $f.Trim() -Algorithm SHA256).Hash.ToLower()
+  if($got -ne $want){ "MISMATCH $f" }
+}
+# 什么都不打印 = 全部一致
+```
+
+有 `sha256sum` 的环境直接用 `sha256sum -c SHA256SUMS`。
 
 | 文件 | 探针 | 说明 |
 |---|---|---|
-| `fp8-baseline.txt` / `fp8-unlocked.txt` | `bench/fp8_mma_bench.cu`，`mma.m16n8k32` e4m3→f32，寄存器空转 | **issue rate**，不是 GEMM；与 `mma-baseline/unlocked.txt` 同一进程口径，可直接比 |
-| `mma-baseline.txt` / `mma-unlocked.txt` | `mma_bench` 系列（f16/bf16/s8/dp4a/ffma） | 同一次会话采集 |
-| `cublas-contaminated.txt` | cuBLAS GEMM | **污染样本**：采集时 GPU 有其他负载，保留作为 `docs/PITFALLS.md` 那个坑的原始证据 |
+| `mma-baseline.txt` | `bench/mma_bench.cu`（f16/bf16/s8/dp4a/ffma） | stock 基线，10/25 采集 |
+| `fp8-baseline.txt` | `bench/fp8_mma_bench.cu`，`mma.m16n8k32` e4m3→f32，寄存器空转 | **issue rate**，不是 GEMM；stock 基线 |
+| `mma-unlocked.txt` / `fp8-unlocked.txt` | 同上两套 | 更早一次解锁（`CF349D28`）的采集，`reps=3` |
+| `mma-unlocked-run0005.txt` / `fp8-unlocked-run0005.txt` | 同上两套 | `RUN0005`（修好的 EFI）那次开机，`reps=5` |
+| `cublas-unlocked-run0005.txt` | `bench/cublas_gemm.cu` GEMM，N=8192 | `RUN0005` 那次开机；每用例带 `nonzero C` 校验行 |
+| `mma-unlocked-live.txt` / `fp8-unlocked-live.txt` / `cublas-unlocked-live.txt` | 同上三套 | 同一个 boot 内后来复测（卡跑在 2640 MHz） |
+| `cublas-contaminated.txt` | cuBLAS GEMM | **污染样本**：采集时 GPU 有其他负载，保留作为 `docs/PITFALLS.md` #11 的原始证据 |
 
-## 采集条件（补记）
+`*run0005` 与 `*-live` 的 6 行 `#` 头里带 EFI 的 sha256、boot 时刻、日志路径 ——
+拿它和 `H:\AD104-UNLOCK\RUN0005.TXT` 对得上，才能证明「这批数字是那次解锁状态下测的」。
+
+## 同一状态、两次复测：绝对值随频率走，比值不走
+
+`RUN0005` 那次 boot 内测了两轮，中间没重启：
+
+| | `mma-unlocked-run0005` | `mma-unlocked-live` |
+|---|---:|---:|
+| `f16/f16` | 175.1 | **188.0** |
+| `f16/f32` | 176.1 | **188.1** |
+| `bf16/f32` | 175.6 | **187.5** |
+| `s8/s32` | 348.0 | 374.9 |
+| `dp4a` | 87.7 | 93.3 |
+| `ffma` | 41.5 | 44.8 |
+| **`f16/f32 ÷ f16/f16`** | **1.006** | **1.001** |
+
+所有模式一起涨了约 6%，因为它们一起受同一个 SM 频率支配。**结论只由最后一行的比值
+承载**，绝对值只是当时的频率乘一个常数。这就是为什么 `README.md` 和 `tools/verify-unlock.ps1`
+都用比值判定 —— 拿绝对值判会把「降频」误读成「没解锁」，也会把「升频」误读成「解锁更强」。
+
+## 采集条件（`RUN0005` 那次开机，已补全）
 
 | 项 | 值 |
 |---|---|
 | GPU | RTX 4070 Ti SUPER，AD103，`10de:2705`，16376 MiB，66 SM，sm_89 |
-| 迭代/重复 | `iters=20000`，`reps=3`（FP8 与 MMA 两套同参数） |
-| 驱动 / 系统 | 待补（`nvidia-smi` 的 driver version + Windows 版本或 Linux 内核） |
-| 功耗上限 | 待补（`nvidia-smi -q -d POWER` 的 Power Limit） |
-| 采集时是否受功率墙 | 待补（`clocks_throttle_reasons.active` 是否出现 `SW Power Cap`） |
-| 桌面/后台负载 | 待补 |
+| 迭代/重复 | `iters=20000`，`reps=5`（FP8 与 MMA 两套同参数）；cuBLAS 为 `N=8192 iters=3 reps=3` |
+| 驱动 / 系统 | `621.01` / Windows 11 专业工作站版 `10.0.26300` Build 26300 |
+| VBIOS | `95.03.45.40.c5` |
+| 功耗上限 | 285 W（default 285 W / max 285 W，未被改过） |
+| 采集时是否受功率墙 | 否。`clocks_throttle_reasons.active = 0x1`，只命中 `gpu_idle`；`sw_power_cap` / `hw_slowdown` / `hw_thermal_slowdown` 全为 Not Active。`clocks.max.sm = 3165 MHz` |
+| 桌面/后台负载 | 空闲。显卡无游戏/推理进程占用 |
+| PCIe | Gen4 ×16 |
+
+`mma-baseline.txt` / `fp8-baseline.txt` 是更早（10/25）采的，桌面负载情况没有记录；
+它们的用途只是和同口径的 unlocked 对照，绝对值不作跨日比较。
 
 ## 方法学注意：首跑污染
 
@@ -32,3 +72,18 @@
 
 无论哪种，结论都落在 **1.9× 附近**，与"发射率翻倍"一致；`f16/f16`、`s8/s32`、`dp4a`、`ffma`
 在两侧基本不变，是这条结论的对照组。
+
+（后来又测到 `e4m3/f32` 在 319.58 与 374.28 两档，差异同样来自 SM 频率而不是机制 ——
+`*-live` 那组跑在 2640 MHz，`*run0005` 那组跑在更低频。比值一律约 1.87–2.20。）
+
+## 两条必须记住的口径
+
+**一、比值是判据，绝对值不是。** 见上面那张两轮对照表。同一台机器、同一次 boot，
+绝对值能整体漂 6%；降频严重时能漂到一半（实测 2775→1440 MHz 让 `f16/f32` 从 176 掉到 88，
+恰好等于 stock 值，看上去就是"没解锁"）。
+
+**二、数字大得离谱时先怀疑自己。** `cublas_gemm.cu` 曾经报出 `fp16/fp16acc` 4588 / 4744 TF/s
+（约 4000–4700，比物理峰值高一个数量级）。原因是 cuBLAS 按 `computeType` 的宽度读
+`alpha`，`float 1.0f` 的低两字节是 `0x0000`，被当成 `__half 0.0` → 每个 GEMM 输出全零
+矩阵 → 工作量塌掉、计时器被自己的 bug 缩短。详见 `docs/PITFALLS.md` #12。
+修好之后同一个用例是 140–151 TF/s，每行都带 `nonzero C: 67108854 / 67108864` 自证。

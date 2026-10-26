@@ -1,0 +1,12 @@
+# RUN0005 state, live re-verification (fourth independent session, same boot)
+# captured 2026-10-27 00:04, still-unlocked since boot 2026-10-26 23:45:44
+# log H:\AD104-UNLOCK\RUN0005.TXT, EFI sha256 76fee0365338977da4de2e29593e1f8ec8fda0447d0364b7240632ca985f7d29
+# driver 621.01, VBIOS 95.03.45.40.c5, power limit 285 W, PCIe Gen4 x16
+# Windows 11 10.0.26300, idle GPU, clocks.sm 2640/3165 MHz, power.draw 46.8 W
+# clocks_throttle_reasons.active 0x1 (gpu_idle only), temp 43.6 C
+# NVIDIA GeForce RTX 4070 Ti SUPER, 66 SMs, sm_89, iters=20000 reps=5
+mode          best TF/s  median TF/s   runs
+e4m3/f32         374.28       373.81   374.3/373.9/356.0/373.8/373.8
+
+(instruction issue rate, not a GEMM; compare to mma_bench f16/f32,
+ not to the report's 59.3 TF/s CUTLASS number)

@@ -1,31 +1,60 @@
-# 这条路停在哪（2026-10-26）
+# 这条路走到哪（2026-10-27 更新）
 
-解锁机制本身跑通了，数字在 README。停下来的直接原因是**施加方式**：
-没有一种既可靠、又不依赖 U 盘的启动形式。
+**U 盘手动引导这条路已经走通。** `RUN0005` 是修好的版本第一次跑成功：写寄存器 → FLR →
+干净交棒给 `bootmgfw.efi`，Windows 起来后 `f16/f32 ÷ f16/f16 = 1.001`，对照组不动。
+同一次 boot 内隔一段时间再测，比值仍是 1.001。
 
-但回看最后一次 U 盘尝试（`RUN0004`）之后要补一句更准确的话：**那次其实解锁成功了**，
-是被自己的一道假失败加一段静默送掉的。详见下面「RUN0004」一节。
-
-这份文件记录停止时的确切位置，目的是让接手的人不必重走。所有结论都标了证据等级。
+**没走通的只有 ESP 接管那条**（装上去卡在 boot 阶段，见下）。这份文件记录位置，目的是
+让接手的人不必重走。所有结论都标了证据等级。
 
 ## 已验证成立的
 
-`mma_bench`，register-resident 发射率，20000 iter × 3 rep：
+`mma_bench`，register-resident 发射率。两轮都取 best，同一 boot 内、中间没重启：
 
-| 模式 | stock | 解锁后 | 倍数 |
+| 模式 | stock | `RUN0005` 首次 | 同 boot 复测 |
 |---|---:|---:|---:|
-| `f16/f32` | 88.0 | 176.6 | 2.01× |
-| `bf16/f32` | 87.9 | 176.2 | 2.00× |
-| `e4m3/f32` | 170.63 | 325.98 | 1.91× |
-| `f16/f16` / `s8` / `dp4a` / `ffma` | — | 不变 | 对照组 |
+| `f16/f32` | 88.0 | 176.1 | **188.1** |
+| `bf16/f32` | 87.9 | 175.6 | **187.5** |
+| `e4m3/f32` | 170.63 | 319.58 | **374.28** |
+| `f16/f16` | 175.6 | 175.1 | 188.0 |
+| `s8/s32` | 352.5 | 348.0 | 374.9 |
+| `dp4a` | 87.0 | 87.7 | 93.3 |
+| `ffma` | 41.8 | 41.5 | 44.8 |
+
+复测那一列整体比首次高约 6%，因为卡跑在 2640 MHz 而不是更低频。**变的只有频率**：
+两轮的 `f16/f32 ÷ f16/f16` 分别是 1.006 和 1.001，比值不动。这就是为什么判据只能是比值。
 
 事务日志：`result=0 safe=1 retained=0 started=1 quiesced=1 flrs=1 DMA_live=0`，
 FLR 后 `SS0=0x88888888 SS1=0x00000008 readout1=0 full=1`。
-数值校验 `failures=0 max_abs=0`。
+数值校验 `failures=0 max_abs=0`（77935 个 cell，FP16 与 BF16 两种累加各三形状）。
 
-**这条路径用 U 盘手动引导成功过两次**（`5D5277C2` 和 `CF349D28`）。
+**这条路径用 U 盘手动引导成功过三次**（`5D5277C2`、`CF349D28`、`76FEE036`）。
 
-## 已验证失败的
+判据：`f16/f32 ÷ f16/f16`，stock ≈ 0.50，解锁 = 1.00。这个比值乘掉了频率，跨频点可比。
+
+## RUN0005：跑通的这一次
+
+`H:\AD104-UNLOCK\RUN0005.TXT`，13143 B，2026-10-26 23:45:42；Windows 启动 23:45:44
+（间隔 2 秒 = 干净交棒，没有卡）。184 行。
+
+三处修复的判据都在这份日志里：
+
+```
+:19  preflight[6] Snapshot=0 edges=180
+:20  GPU children cached: count=3
+:21  preflight[6b] CacheGpuChildren=0 children=3     ← A 生效
+:184 TRANSACTION OK: … handoff check passed; …        ← C 生效（拒绝理由已被记进日志）
+```
+
+全文没有 `graph missing` / `finish incomplete` / `GPU finish after close` / `STOP:`，
+一条都没有 —— A 那道假失败彻底消失。
+
+注意 `children=3`，比预期的 2 多一个（`Consumers counts: pci=1 child=2` 之外还有一个）。
+多出来的那个不影响结果，但说明这里的枚举口径和 `Consumers()` 不完全一致，值得留意。
+
+`release: residual edges on GPU handles=1 expected=0` 仍然出现，被容忍，不致命。
+
+## ESP 接管：已验证失败
 
 **ESP 接管**：把 `\EFI\Microsoft\Boot\bootmgfw.efi` 换成解锁 EFI，让它解锁后
 `StartImage` 原版（改名成 `bootmgfw.orig.efi`）。装上去之后，在固件启动菜单里
@@ -118,8 +147,8 @@ TextOut 边**。修法：preflight 里路径还活着的时候扫一遍 `AllHand
 否则日志停在 `TRANSACTION OK` 上，什么都没解释。
 
 **证据等级**：A 是对已观测日志行的代码级解释，自洽且能定位到具体 handle；
-B、C 是代码路径上的确定事实。**三个修复都还没在硬件上跑过。**
-离线回归 `test-app-flow.exe` 272 断言 / 15 场景通过。
+B、C 是代码路径上的确定事实。**三处都已在硬件上验证**（见上面 RUN0005 一节）。
+离线回归 `test-app-flow.exe` 15 个场景全绿。
 
 ## 唯一的存活线索（假设，未验证）
 
@@ -144,33 +173,41 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 bug 的修复在同一个 EFI 里，部署在 `H:\EFI\BOOT\BOOTX64.EFI`（104448 B，
 `76fee036…`）。走 U 盘这一路不需要它；只有回头试 ESP 时才用得上。
 
-## 下次重跑时的判据（照这个看日志）
+## 开机后怎么确认（照这个做）
 
-新 EFI 的 preflight 会多出一行，这是 bug A 的修复是否生效的直接判据：
+进 Windows 后立刻跑：
 
-```
-preflight[6b] CacheGpuChildren=0 children=2
-```
-
-- `children=2` → 缓存了两个显示子节点（本卡实测过 `pci=1 child=2`），修复生效
-- `children=1` → 只认出一个，另一个显示节点的边仍会被判成 missing
-- `children=0` → 路径匹配整体失效，说明显存/驱动状态和上次不同
-
-接着这两行必须**都不再出现**：
-
-```
-GPU graph missing: handle=… protocol=0x387477c2 …
-GPU finish after close status=0x8000000000000006
+```powershell
+# 判据：f16/f32 ÷ f16/f16 的比值，而不是绝对值
+G:\workspace\rtx2705\bench\mma_bench.exe 20000 5
 ```
 
-出现 `TRANSACTION OK: … handoff check passed …` 之后进程会把控制权交给
-`bootmgfw.efi`。**如果这时画面停住，先别按重启** —— 等 10 秒；只要进了 Windows
-就立刻跑 benchmark 确认。真的停住了，屏幕现在会打出
-`STOPPED. Power OFF fully; …`（bug B 的修复），看到这行说明门是软件拒的，
-硬件状态是安全的，不必断电：**直接按 Ctrl+Alt+Del 或走固件菜单选 Windows Boot Manager
-进去测**，先别断电，因为断电会清掉 `SS0`/`SS1`。
+比值 ≈ 1.00 = 解锁在；≈ 0.50 = 不在（stock）。**别用绝对值判断** —— 降频能把绝对值
+从 188 打到 88，看上去跟没解锁一模一样。
 
-判据是 `mma_bench.exe 20000 3` 的 `f16/f32`：约 176 = 解锁生效，约 88 = 没生效。
+想更省事：
+
+```powershell
+G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
+```
+
+它会先读 `nvidia-smi` 的频率/功耗/降频原因（不是 `0x1` 就打「本次绝对值不可用」），
+再算比值，并单独打印 `f16/f32 ÷ f16/f16` 这个活比值。
+
+真出现 `STOPPED. Power OFF fully; …` 说明门是软件拒的，硬件安全，**不用断电**：
+直接 Ctrl+Alt+Del 走 Windows Boot Manager 进去测，先别断电，断电会清掉 `SS0`/`SS1`。
+（这条提示以前是看不见的 —— bug B。现在能看见了。）
+
+## 踩过的坑里有一条和机制无关、但会骗过所有人
+
+`bench/cublas_gemm.cu` 原来对 `fp16/fp16acc` 也传 `float alpha=1.0f`。cuBLAS 的
+`cublasGemmEx` 按 `computeType` 的**宽度**读这个 `const void*`，于是它把 `1.0f` 的低
+两字节 `0x0000` 读成 `__half 0.0` —— 每个 GEMM 输出全零矩阵，实际工作量塌成几乎零，
+计时器于是报出 **4588 / 4744 TF/s**。
+
+这个数字一度写进了 README 的结果表。它比这张卡的物理峰值高一个数量级，本该第一时间
+被怀疑。现在的每个用例末尾都打 `nonzero C: …`，全零会直接标 `<-- BROKEN`。
+细节见 [PITFALLS.md](PITFALLS.md) #12。**教训：数字大得离谱时先怀疑自己没干活。**
 
 ## 重试前必须先做的事
 
@@ -198,14 +235,17 @@ GPU finish after close status=0x8000000000000006
 ## 拉起来需要什么
 
 - `windows/ad103-2705` 分支：`https://github.com/A-XIANGQAQ/gpu-unlock-ada/tree/ad103-2705/windows/ad103-2705`
-  基于上游 `4e7fefc`，HEAD `cb3691b`，`test-app-flow.exe` 272 断言 / 15 场景通过
-- 本仓库 `docs/PITFALLS.md`：11 个移植阻塞点 + 3 个「拆完之后还要验证」的坑
-  （6b 身份要缓存、10b 停机要可见、10c 关日志≠故障），每条「症状 → 原因 → 改法」
+  基于上游 `4e7fefc`，HEAD `cb3691b`
+- 本仓库 `docs/PITFALLS.md`：11 个移植阻塞点 + 4 个「拆完之后还要验证」的坑
+  （6b 身份要缓存、10b 停机要可见、10c 关日志≠故障、10d `%p` 会静默整份日志），
+  外加 #12 cuBLAS alpha 宽度，每条「症状 → 原因 → 改法」
 - 本仓库 `docs/PRIOR-ART.md`：邻域实现对比，含本移植做错的两处
-- `bench/`：三个 benchmark 源，口径与 `results/` 一致
+- `bench/`：四个 benchmark 源（`mma_bench` 在上游 `diagnostics/bench/` 下），
+  口径与 `results/` 一致
 
 ## 一句话
 
-机制没问题，数字是真的。它停下的原因不是「解锁做不到」，而是**施加方式一直不可靠**：
-USB 手动那条会被一道假失败和一段静默送掉，ESP 接管那条还没验证过就不会启动。
-在有人跑通其中一条之前，保持 stock 是最优选择。
+机制成立，数字是真的，U 盘手动那条已经跑通三次。剩下的只有两件：ESP 接管那条一直
+没验证（它的线索 `Inspect()` 已改但没重测），和 U 盘本身的可靠性。
+
+想要非易失，别在 ESP 接管上加补丁 —— 换独立分区那条形状。

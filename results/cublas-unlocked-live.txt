@@ -1,0 +1,17 @@
+# RUN0005 state, live re-verification (fourth independent session, same boot)
+# captured 2026-10-27 00:04, still-unlocked since boot 2026-10-26 23:45:44
+# log H:\AD104-UNLOCK\RUN0005.TXT, EFI sha256 76fee0365338977da4de2e29593e1f8ec8fda0447d0364b7240632ca985f7d29
+# driver 621.01, VBIOS 95.03.45.40.c5, power limit 285 W, PCIe Gen4 x16
+# Windows 11 10.0.26300, idle GPU, clocks.sm 2640/3165 MHz, power.draw 46.8 W
+# every case gates on nonzero C -- see docs/PITFALLS.md #12
+# NVIDIA GeForce RTX 4070 Ti SUPER, 66 SMs, sm_89, N=8192 iters=3 reps=3
+# working set ~0.81 GB (f32 staging + 2 inputs)
+mode              best TF/s  median TF/s   runs
+fp16/fp32acc         155.97       139.28   139.3/139.3/156.0
+   nonzero C: 67108864 / 67108864
+fp16/fp16acc         151.30       147.01   130.6/147.0/151.3
+   nonzero C: 67108854 / 67108864
+fp32                  29.69        28.92   28.6/28.9/29.7
+   nonzero C: 67108864 / 67108864
+bf16/fp32acc         158.44       157.65   141.2/157.6/158.4
+   nonzero C: 67108864 / 67108864
