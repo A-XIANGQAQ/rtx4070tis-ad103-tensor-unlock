@@ -450,7 +450,7 @@ blank 过了又停 / 跳过 / 截断 / 什么都没匹配上），并对「事�
 | `test_guards` | 17 admission cases | 两处 device id 写的是上游 AD104 的 `0x2782` |
 | `test_efi_transaction` | 120 scenarios（30 × 4 permutation） | 配置空间、寄存器初值、FWSEC 几何、WPR2 桩全是上游卡的常量 |
 | `test_boot_io` | 718 checks / 18 cases | pin 了上游 3086728 字节的 bootmgr，这台是 3086680 |
-| `test_msi_release` | 763156 checks / 47 cases | 要三份从驱动镜像里截出来的 `driver-*.bin`，这台没有；另有三处夹具写死上游的 bus、chip id 和 BAR 长度 |
+| `test_msi_release` | 763156 checks / 47 cases | 要三份从驱动镜像里截出来的 `driver-*.bin`，这台没有，现在跑的是 `synthetic` 替身；另有三处夹具写死上游的 bus、chip id 和 BAR 长度 |
 
 `test_boot_io` 跑起来之后找到一个真 bug：`Sealed` 是会话级状态，只在关日志时置位、
 从不复位，所以第二次 `GuBootOpen` 之后所有诊断静默消失。固件只调用一次，

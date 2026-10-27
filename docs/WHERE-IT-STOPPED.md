@@ -180,10 +180,9 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 不过这些是夹具，不是这台机器的固件枚举结果。
 
 注：这台机器的 ESP 是 disk 3 分区 1，300 MB。`Inspect()` 的多盘容忍和上面三个
-bug 的修复在同一个 EFI 里。`H:\EFI\BOOT\BOOTX64.EFI` 现在是 104448 B /
-`bfc70ff1…`（blank 入口态 + `Sealed` 复位 + 撤掉移植期的图抖动容忍 + release 后两种
-拒绝分开命名），上一版 104960 B / `64d70365…` 留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；
-只有回头试 ESP 时才用得上。
+bug 的修复在同一个 EFI 里，所以 U 盘上那份就包含它们。走 U 盘这一路不需要 ESP
+那部分，只有回头试 ESP 时才用得上。本场景现在札在哪一份镜像上，看下面的构建表和
+`H:\EFI\BOOT\BOOTX64.EFI` 那一段；这里不重复写哈希，免得又过期。
 
 ## 320 W VBIOS override 与 SM 解锁的冲突（改在解锁侧，未上硬件）
 
@@ -267,18 +266,23 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 | `68ee8c9` | 104448 | `9092110A` | 没上过。`boot_io.c` 那句话改成不声称 pin，产物跟着变 |
 | `1ecaf35` | 104448 | `9092110A` | 没上过。只动了 rebuild-efi.ps1 |
 | `dcda05c` .. `c80b09f` | 104448 | `BFC70FF1` | 没上过。`app.c` 里 release 之后两种拒绝拆成两个 stage，`app.c` 是编进镜像的 |
-| `1fd73d4` | 105472 | `250C7EA1` | 没上过。`GuAd104Prepare()` 里十一处静默拒绝各自命名，镜像因此长了约 1 KiB |
+| `1fd73d4` .. `cce9fda` | 105472 | `250C7EA1` | 没上过。`GuAd104Prepare()` 里十一处静默拒绝各自命名，镜像因此长了约 1 KiB |
+| `34983b3` | 105472 | `75314A88` | 没上过。`GuEnableMaster()` 里选择器复比失败时把现场值和闸门存下的值一起打出来 |
 
 **只有 `76FEE036` 真正解锁过这块卡。** 从 `cef0935` 往后每一版都没上过机，
 所以「能解锁的那版」和「肯接受 320 W override 留下的 blank 态的那版」之间，
 只隔一个提交：`c794f3e` → `cef0935`。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `250C7EA1`（105472 B）。这一版与 `BFC70FF1`
-的差别只有一处：`GuAd104Prepare()` 原来把十一个检查折进 `EFI_NOT_READY` 和
-`EFI_COMPROMISED_DATA` 两个状态码里且大部分不打日志，现在每一处各打一行
-`cold-prepare: ...`。这个改动只影响被拒时屏上有几个字，不影响放行时的行为。
+`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `75314A88`（105472 B）。这一版与 `250C7EA1`
+的差别只有一处：`GuEnableMaster()` 有十一条 `goto fail`，而 `fail:` 只打状态字，
+所以拒绝时分不出是哪一条。其中「选择器在最后一次比对与使能 BME 之间被改写」
+是 override 环境下最可能发生的一条，现在它把现场的 `SS0`/`SS1` 与闸门存下的
+一对一起打出来。相比 `250C7EA1` 的另一处是 `GuAd104Prepare()` 把十一个检查从
+两个状态码里拆出来，每一处各打一行 `cold-prepare: ...`。两处都只影响被拒时
+屏上有几个字，不影响放行时的行为。
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
-`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，上一版 `BFC70FF1` 留作
+`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，上一版 `250C7EA1` 留作
+`H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-065815`，`BFC70FF1` 那份留作
 `H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-064335`。
 
 它随时能换回去，但换回去之后只有一种情况能用：注册表里没挂 VBIOS override。
@@ -304,7 +308,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给十四种判决（不含 `UNKNOWN` 那个占位），下表是全部十四种。四种在真实日志上出现过，
+它给十五种判决（不含 `UNKNOWN` 那个占位），下表是全部十五种。四种在真实日志上出现过，
 其余只有合成样例（`blank` 那两种要等
 `RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`ENTRY-REFUSED-NEITHER-STATE`、
 `GATE-REFUSED-AFTER-RELEASE`、`CLAIM-NOT-HELD`、`TRANSACTION-FAILED`、
