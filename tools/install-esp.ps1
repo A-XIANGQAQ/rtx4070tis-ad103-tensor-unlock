@@ -13,7 +13,8 @@
               -> Windows
 
   The original file is preserved byte-for-byte as bootmgfw.orig.efi. AUTO.TXT in
-  \AD104-UNLOCK\ makes the EFI unlock without the U prompt.
+  \AD104-UNLOCK\ makes the EFI unlock without the U prompt: the EFI only checks
+  that the file opens, its contents are never read.
 
   Because the firmware target never changes, Secure Boot off is the only
   requirement, and nothing in the boot configuration is touched. A Windows
@@ -85,9 +86,18 @@ if($Rollback){
     } else {
         Say 'stock boot manager verified'
     }
-    foreach($d in @($ASSETS,$LOGDIR)){
-        if(Test-Path $d){ Remove-Item $d -Recurse -Force; Say "removed $d" }
+    if(Test-Path $LOGDIR){
+        $runs = @(Get-ChildItem $LOGDIR -Filter 'RUN*.TXT' -ErrorAction SilentlyContinue)
+        if($runs.Count -gt 0 -and -not $Force){
+            Warn "removing $LOGDIR also deletes $($runs.Count) log file(s):"
+            $runs | ForEach-Object { Warn ("  " + $_.Name + "  " + $_.Length + " B  " + $_.LastWriteTime) }
+            Warn 'these are the only record of whether the installed EFI ever reached its logging stage'
+            Warn 'copy them somewhere else first, or rerun with -Force'
+            Fail 'refusing to delete the logs'
+        }
+        Remove-Item $LOGDIR -Recurse -Force; Say "removed $LOGDIR"
     }
+    if(Test-Path $ASSETS){ Remove-Item $ASSETS -Recurse -Force; Say "removed $ASSETS" }
     Dismount-Esp
     if(Test-Path $stateFile){ Remove-Item $stateFile -Force }
     Say 'rollback complete: firmware boots the stock Windows Boot Manager again'
@@ -95,7 +105,11 @@ if($Rollback){
 }
 
 # ------------------------------------------------------------------ preflight
-if(-not (Test-Path $EfiSource)){ Fail "EFI not found: $EfiSource" }
+if(-not (Test-Path $EfiSource)){
+    Fail ("EFI not found: $EfiSource" + "`n" +
+          "  This repo has no build\ directory; the EFI comes from the gpu-unlock-ada " +
+          "checkout. Pass -EfiSource <...>\windows\ad103-2705\build\AD104-EXPERIMENTAL.EFI")
+}
 $efiLen  = (Get-Item $EfiSource).Length
 $efiHash = (Get-FileHash $EfiSource -Algorithm SHA256).Hash
 Say "EFI : $EfiSource"
@@ -149,7 +163,7 @@ foreach($n in $need){ Copy-Item (Join-Path $AssetDir $n) (Join-Path $ASSETS $n) 
 Say "copied $($need.Count) assets -> $ASSETS"
 
 New-Item -ItemType Directory -Force -Path $LOGDIR | Out-Null
-Set-Content -Path (Join-Path $LOGDIR 'AUTO.TXT') -Value "unattended unlock`n" -Encoding ascii -NoNewline
+Set-Content -Path (Join-Path $LOGDIR 'AUTO.TXT') -Value 'unattended unlock' -Encoding ascii
 Say "created AUTO.TXT (unattended mode)"
 
 Dismount-Esp
