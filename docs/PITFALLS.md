@@ -562,6 +562,23 @@ if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!
 
 同时 `unlock_610.c` 主闸门的 `ss1!=1` 改成 `!(ss1==1 || (ss0==0 && ss1==0))`。
 
+**只放开这一条就够了**。主闸门剩下那五个合取项，在六份失败日志里已经被证明成立：
+`profile.c` 先过 19 个 pin、再读 SS0/SS1，日志里既然没有
+`cold-profile register mismatch`，说明那 19 个都是 stock 值，而主闸门比的正是其中五个：
+
+| 主闸门条件 | 来源寄存器 | `profile.c` 的 pin |
+|---|---|---|
+| `plm_entry == 0xffffff8f` | `0x00823804` | `0xffffff8f` |
+| `sample.plm == 0x8b8f` | `0x00118128` | `0x8b8f` |
+| `sample.boot == 0x3ff` | `0x00118234` | `0x3ff` |
+| `sample.cpuctl == 0x10` | `0x00110100` | `0x10` |
+| `wpr_hi == 0` | `0x001fa828` | `0x0` |
+
+`inaccessible(ss0)` 对 `ss0=0` 也不成立（它只拒 `~0` 和 `0xbadf0000` 段）。
+
+所以 `ss1!=1` 是当时唯一挡住路的合取项，不是「第一道」。六份失败日志里既没有
+`register mismatch` 也没有 `config mismatch`，与此一致。
+
 能这么改是因为全链路本来就不写死 SS1 的值：
 
 - `port.c` 的 `GuEntrySelectorsMatch` 比对的是 `Ss1==EntrySs1`，不是字面量 1
@@ -619,7 +636,7 @@ EFI_STATUS GuBootClose(VOID) { ...; if(s==EFI_SUCCESS)Sealed=TRUE; return s; }
 ```
 
 `GuBootOpen` 从前不复位 `Sealed`。固件只调用一次，所以出货的路径**
-没有暴露过**这个问题——但任何「关掉再打开」的用法都会在第二次静默丢弃
+没有暴露过**这个问题，但任何「关掉再打开」的用法都会在第二次静默丢弃
 全部日志，而且 `GuLog` 是静默返回的，调用方看不出是日志没写还是代码没跑。
 
 改法是在会话开始处复位，与 `Log=NULL` 的语义对齐：
@@ -672,7 +689,7 @@ else if(...attrs!=Plan.attributes)GuLog("release: attributes ... (tolerated)\n")
 ```
 
 它们是 `else if` 链的末段，命中后 `failed` 仍然是 `NULL`，于是 `GuMsiReleased()`
-返回 `TRUE` —— **配置检查和属性检查根本没跑，却被当成通过**。
+返回 `TRUE`：**配置检查和属性检查根本没跑，却被当成通过**。
 
 判断这批代码该不该在，不要读注释，查两个东西：上游同名文件对应行是不是硬失败
 （`origin/main:windows/ad104-msi/msi_release.c` 是 `s=EFI_NOT_READY` 与
@@ -760,13 +777,13 @@ exit code: 2
 
 **排除掉的四个原因**：
 
-- 磁盘满 —— `C:` 还有 52.97 GB
-- 权限 —— 手写同一个文件名同一个大小完全成功（4 B / 300 KB / 3 MB 都试过），
+- 磁盘满：`C:` 还有 52.97 GB
+- 权限：手写同一个文件名同一个大小完全成功（4 B / 300 KB / 3 MB 都试过），
   `C:\Temp\vbtest` 与 `%LOCALAPPDATA%\Temp` 的 ACL 里 `Authenticated Users`
   有 `Modify`
-- Defender ASR —— `Get-MpPreference` 直接报 `0x800106ba`（Defender 服务没在跑），
+- Defender ASR：`Get-MpPreference` 直接报 `0x800106ba`（Defender 服务没在跑），
   这台机器装的是 360 安全卫士
-- 子目录不存在 / 残留 `onefile_*` —— 每次都是清空后新建的目录，失败后目录里
+- 子目录不存在 / 残留 `onefile_*`：每次都是清空后新建的目录，失败后目录里
   **一个文件都不剩**（连解一半的都没有）
 
 `G:\workspace` 的 ACL 和根目录下新建的目录不一样，多两条：
