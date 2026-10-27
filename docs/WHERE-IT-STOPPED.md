@@ -251,7 +251,7 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 ### 哪一版 EFI 上过机（每次构建都能重算，不是回忆）
 
 `windows/ad103-2705/rebuild-efi.ps1 -Commit <hash>` 从任意提交重建并打印哈希，
-脚本里带着这张对照表。本地可达的七个提交，2026-10-28 全部重编过一遍：
+脚本里带着这张对照表。下面每一行都在 2026-10-28 重编过一遍，不是回忆：
 
 | commit | 大小 | sha256 前 8 | 上过机吗 |
 |---|---|---|---|
@@ -269,26 +269,29 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 | `1fd73d4` .. `cce9fda` | 105472 | `250C7EA1` | 没上过。`GuAd104Prepare()` 里十一处静默拒绝各自命名，镜像因此长了约 1 KiB |
 | `34983b3` .. `1b11c35` | 105472 | `75314A88` | 没上过。`GuEnableMaster()` 里选择器复比失败时把现场值和闸门存下的值一起打出来 |
 | `e3da9f9` | 105472 | `8BEEE6FE` | 没上过。`GuAd104Prepare()` 里最后一处静默拒绝（`GuLatchEntrySelectors()`）也报名字了 |
+| `baf9649` | 105984 | `DDE1A608` | 没上过。`GuFlr()` 里 reset 前那个五合一静默拒绝也报名字了 |
 
 **只有 `76FEE036` 真正解锁过这块卡。** 从 `cef0935` 往后每一版都没上过机，
 所以「能解锁的那版」和「肯接受 320 W override 留下的 blank 态的那版」之间，
 只隔一个提交：`c794f3e` → `cef0935`。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `8BEEE6FE`（105472 B）。与 `250C7EA1` 相比有三处差别，
+`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `DDE1A608`（105984 B）。从 `250C7EA1` 往后这三版的改动
 都只影响被拒时屏上有几个字，不影响放行时的行为：
 
 - `GuAd104Prepare()` 把十一个检查从两个状态码里拆出来，每一处各打一行
-  `cold-prepare: ...`。
+  `cold-prepare: ...`，末尾那一处 `GuLatchEntrySelectors()` 也一样。它拒的是
+  `0xffffffff`、`0xbadf0000..`、已解锁的一对、以及 `SS1>0xf`。
 - `GuEnableMaster()` 有十一条 `goto fail`，而 `fail:` 只打状态字，所以拒绝时分不出是哪
   一条。其中「选择器在最后一次比对与使能 BME 之间被改写」是 override 环境下最可能
   发生的一条，现在它把现场的 `SS0`/`SS1` 与闸门存下的一对一起打出来。
-- `GuAd104Prepare()` 末尾那一处 `GuLatchEntrySelectors()` 失败也报名字了。它拒的是
-  `0xffffffff`、`0xbadf0000..`、已解锁的一对、以及 `SS1>0xf`。
+- `GuFlr()` 把 reset 前五个前置条件折进一个 `EFI_NOT_READY`，而 `pcie_flr()` 把它变成
+  `-EIO`，事务日志里就只剩一个裸的 `result=-5`。现在它打
+  `FLR refused: verified=.. fault=.. latched=.. SS0=.. SS1=.. entry=.. .. phase=..`。
 
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
-`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，上两版 `75314A88` 与 `250C7EA1` 留作
-`H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-070815` 与 `BOOTX64.EFI.bak-20261028-065815`，
-`BFC70FF1` 那份留作 `H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-064335`。
+`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`；`8BEEE6FE`、`75314A88`、`250C7EA1` 分别留作
+`BOOTX64.EFI.bak-20261028-071718`、`BOOTX64.EFI.bak-20261028-070815`、
+`BOOTX64.EFI.bak-20261028-065815`，`BFC70FF1` 那份留作 `BOOTX64.EFI.bak-20261028-064335`。
 
 它随时能换回去，但换回去之后只有一种情况能用：注册表里没挂 VBIOS override。
 `76FEE036` 的二进制里没有 blank 入口态那道闸门（搜 `blank selectors` 命中 0，
@@ -313,17 +316,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给十五种判决（不含 `UNKNOWN` 那个占位），下表是全部十五种。四种在真实日志上出现过，
+它给十六种判决（不含 `UNKNOWN` 那个占位），下表是全部十六种。四种在真实日志上出现过，
 其余只有合成样例（`blank` 那两种要等
 `RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`ENTRY-REFUSED-NEITHER-STATE`、
 `GATE-REFUSED-AFTER-RELEASE`、`CLAIM-NOT-HELD`、`TRANSACTION-FAILED`、
-`TRANSACTION-FAILED-THEN-STOP` 与 `TRUNCATED` 至今没在真机上出现过）：
+`TRANSACTION-FAILED-THEN-STOP`、`FLR-REFUSED` 与 `TRUNCATED` 至今没在真机上出现过）：
 
 | 判决 | 含义 | 出处 |
 |---|---|---|
 | `TRANSACTION-COMPLETE` | `Transaction result=0`，事务跑完了，进 Windows 后验算力 | `RUN0004`–`RUN0006` |
 | `TX-OK-THEN-HALT` | `Transaction result=0`，但随后某段 `STOP` | `RUN0001` / `RUN0002` |
 | `TRANSACTION-FAILED` | `Transaction result` 非 0，没有 `STOP` | 合成样例 |
+| `FLR-REFUSED` | `GuFlr()` 在 reset 前就拒了，事务一次都没跑，`result=-5` 只是后果 | 合成样例 |
 | `TRANSACTION-FAILED-THEN-STOP` | `Transaction result` 非 0，随后某段 `STOP` | 合成样例 |
 | `ENTRY-REFUSED-SELECTOR` | 那版 EFI 还没有 blank 闸门，`SS0=0 SS1=0` 是它正常的拒绝 | `RUN0007`–`RUN0012` |
 | `ENTRY-REFUSED-NEITHER-STATE` | 这版已接受两种入口态，选通器落到了第三种状态 | 合成样例 |
@@ -343,7 +347,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 资产校验、读 PROM 出错、PROM 不是本 build pin 的那份、FWSEC 描述符被拒、
 以及读取过程中 config 或选通器发生了变化。报告里的 `prepare :` 那行直接给名字。
 
-前四条的分界是 `Transaction result` 后面那个数：`=0` 才叫 OK。以前只看这一行在不在，
+`FLR-REFUSED` 排在最前面：它在 `GuFlr()` 里就拒了，事务体根本没进去，所以
+`result=-5` 是后果不是原因。报告里的 `flr :` 那行把五个前置条件里的现场值
+（`verified` / `fault` / `latched` / `SS0` / `SS1` / `entry` / `phase`）一起打出来。
+
+其余几条的分界是 `Transaction result` 后面那个数：`=0` 才叫 OK。以前只看这一行在不在，
 于是 `result=-5` 之后再 `STOP` 也会被归到 `TX-OK-THEN-HALT` —— 判决名里带 OK，
 内容却是失败的。`app.c:73-76` 在 `result` 非 0 时会直接 `goto failed`，所以真机上
 这两种新判决一定伴随 `STOP: stage=firmware-transaction`。

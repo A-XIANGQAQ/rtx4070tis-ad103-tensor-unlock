@@ -39,6 +39,11 @@ function Classify($item) {
   # message. From 250C7EA1 onward each refusal names itself, so the verdict can
   # say why instead of just "it refused".
   $prepareRefused = @($lines | Where-Object { $_ -match '^cold-prepare: ' })
+  # GuFlr() is the last gate before the reset. It used to return a bare
+  # EFI_NOT_READY, which pcie_flr() turns into -EIO, so the transaction log
+  # showed result=-5 and nothing pointing at a reason. From DDE1A608 onward
+  # the refusal names which of its five preconditions gave way.
+  $flrRefused    = @($lines | Where-Object { $_ -match '^FLR refused: ' })
   $stop          = @($lines | Where-Object { $_ -match '^STOP: stage=' })
   # app.c split one ambiguous label into two after the driver let go, so the stage
   # name alone now says which refusal it was.
@@ -59,7 +64,12 @@ function Classify($item) {
 
   $verdict = 'UNKNOWN'
   $why     = 'no recognised line'
-  if ($null -ne $txCode -and $txCode -ne 0) {
+  if ($flrRefused.Count -gt 0) {
+    # The reset itself was refused, so the transaction could not have done
+    # anything; result=-5 is a consequence, not the finding. Name the gate.
+    $verdict = 'FLR-REFUSED'
+    $why     = 'GuFlr() refused before the reset, so the transaction never ran'
+  } elseif ($null -ne $txCode -and $txCode -ne 0) {
     # A body that returned non-zero did not unlock anything; whether a stage then
     # stopped is secondary. Keep the two separate so a failure is never mistaken
     # for the RUN0004 shape (body OK, handoff lost).
@@ -136,6 +146,7 @@ function Classify($item) {
   if ($blankAccepted.Count -gt 0) { "blank     : accepted $($blankAccepted.Count)x" }
   if ($coldRefused.Count   -gt 0) { "gate      : " + ($coldRefused[-1]) }
   if ($prepareRefused.Count -gt 0) { "prepare   : " + ($prepareRefused[-1]) }
+  if ($flrRefused.Count    -gt 0) { "flr       : " + ($flrRefused[-1] -replace '^FLR refused: ','') }
   if ($stopStage) { "refusedAt : " + $stopStage }
   if ($txResult.Count  -gt 0) { "tx        : " + ($txResult[-1] -replace '^Transaction result=','') }
   if ($handoff.Count   -gt 0) { "handoffChk: checked" }
