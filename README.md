@@ -319,11 +319,14 @@ windows\ad103-2705\rebuild-efi.ps1 -List
 `SS0=0 SS1=0` 就会拒，和 `RUN0007` 到 `RUN0012` 那六次一样。要换回去就得同时
 把 override 卸掉，那是 285 W。
 
-验证（三个 benchmark 的 `.exe` 不进仓库，需要本机编）：
+验证（benchmark 的 `.exe` 不进仓库，需要本机编）：
 
 ```powershell
-bench\build-cublas.cmd      # cuBLAS GEMM，需要 CUDA + MSVC
-bench\build-fp8mma.cmd      # FP8 issue-rate
+bench\build.cmd all         # 四个探针，需要 CUDA + MSVC
+bench\build.cmd cublas      # cuBLAS GEMM，N / iters / reps
+bench\build.cmd fp8mma      # FP8 e4m3 发射率，mma.m16n8k32
+bench\build.cmd fp8gemm     # FP8 e4m3 GEMM，走 cuBLASLt
+bench\build.cmd f16acc      # 为什么 float alpha 会毁掉 16F 累加的 GEMM
 
 # mma_bench / gemm_check 的源码在上游 diagnostics\bench\ 下，或用 -BenchDir 指到你现有的目录
 
@@ -332,12 +335,14 @@ tools\verify-unlock.ps1 -RunNumber 5
 tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\gemm_check.exe'
 ```
 
-两个 `.cmd` 自己找 `vcvars64.bat`：先看 `%VCVARS64%`，没有就用
+`build.cmd` 自己找 `vcvars64.bat`：先看 `%VCVARS64%`，没有就用
 `vswhere.exe` 问 Visual Studio 装在哪，再退到两个固定路径，都找不到才报
-`Could not find vcvars64.bat`。编译输出写进 `%TEMP%\<脚本名>.log` 后过滤掉
+`Could not find vcvars64.bat`。编译输出写进 `%TEMP%\build-<目标名>.log` 后过滤掉
 MSVC 的 C4819（CUDA 头文件在 936 代码页下的无关警告），成功打 `BUILD-OK`，
 失败打 `BUILD-FAILED see …` 并返回 1。它在编译前会先删掉旧的 `.exe`，所以
-看到 `BUILD-OK` 时那个 exe 一定是这次编出来的。
+看到 `BUILD-OK` 时那个 exe 一定是这次编出来的。`build-cublas.cmd` 与
+`build-fp8mma.cmd` 是薄包装，内容就是 `build.cmd cublas` / `build.cmd fp8mma`——
+文档里别处按这两个名字引用，别让它们失效。
 
 `verify-unlock.ps1` 先读 `nvidia-smi` 的频率/功耗/降频原因，会明确告诉你这次采样的
 绝对值能不能用；然后算 `f16/f32 ÷ f16/f16` 这个「活比值」（stock ~0.50，解锁 1.00），
