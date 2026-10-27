@@ -178,7 +178,7 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 
 注：这台机器的 ESP 是 disk 3 分区 1，300 MB。`Inspect()` 的多盘容忍和上面三个
 bug 的修复在同一个 EFI 里。`H:\EFI\BOOT\BOOTX64.EFI` 现在是 104448 B /
-`950689cb…`（blank 入口态 + `Sealed` 复位 + 撤掉移植期的图抖动容忍），上一版
+`afb6524a…`（blank 入口态 + `Sealed` 复位 + 撤掉移植期的图抖动容忍），上一版
 104960 B / `64d70365…` 留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；
 只有回头试 ESP 时才用得上。
 
