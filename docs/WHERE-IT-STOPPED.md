@@ -177,9 +177,9 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 的六个静默出口加了屏显。但这个改动从未在 ESP 路径上重测过，是假设，不是结论。
 
 注：这台机器的 ESP 是 disk 3 分区 1，300 MB。`Inspect()` 的多盘容忍和上面三个
-bug 的修复在同一个 EFI 里。`H:\EFI\BOOT\BOOTX64.EFI` 现在是 104960 B /
-`64d70365…`（含 blank 入口态与 `Sealed` 复位两处改动），上一版 104448 B /
-`76fee036…` 留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；
+bug 的修复在同一个 EFI 里。`H:\EFI\BOOT\BOOTX64.EFI` 现在是 104448 B /
+`950689cb…`（blank 入口态 + `Sealed` 复位 + 撤掉移植期的图抖动容忍），上一版
+104960 B / `64d70365…` 留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；
 只有回头试 ESP 时才用得上。
 
 ## 320 W VBIOS override 与 SM 解锁的冲突（改在解锁侧，未上硬件）
@@ -223,7 +223,7 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 **这一步只在离线仿真里过了，没有上硬件。** 真机上要冷启动一次才知道 blank 态到底
 能不能走完事务。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 已经是含这处改动的版本（104960 B / `64d70365…`），
+`H:\EFI\BOOT\BOOTX64.EFI` 已经是含这处改动的版本（104448 B / `950689cb…`），
 `RUN0013` 就是这一版的第一次硬件尝试。
 
 判读用 `tools\classify-run.ps1`，不用自己数长度：
@@ -306,10 +306,12 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
 ## 拉起来需要什么
 
 - `windows/ad103-2705` 分支：`https://github.com/A-XIANGQAQ/gpu-unlock-ada/tree/ad103-2705/windows/ad103-2705`
-  基于上游 `4e7fefc`；三个 bug 的修复在 `cb3691b`，之后 `c794f3e` 只改文档
-- 本仓库 `docs/PITFALLS.md`：13 条，每条「症状 → 原因 → 改法」。移植阻塞点之外
+  基于上游 `4e7fefc`；三个 bug 的修复在 `cb3691b`，`c794f3e` 只改文档，
+  `6a82336` 恢复九处图检查的硬失败并加 blank 入口态
+- 本仓库 `docs/PITFALLS.md`：15 条，每条「症状 → 原因 → 改法」。移植阻塞点之外
   还有 4 个「拆完之后还要验证」的坑（6b 身份要缓存、10b 停机要可见、10c 关日志≠故障、
-  10d `%p` 会静默整份日志）、#12 cuBLAS alpha 宽度、#13 override 让 SS0/SS1 读 0
+  10d `%p` 会静默整份日志）、#12 cuBLAS alpha 宽度、#13 override 让 SS0/SS1 读 0、
+  #14 `Sealed` 从不复位、#15 为绕过 `GpuChild()` 而放宽的图检查
 - 本仓库 `docs/PRIOR-ART.md`：邻域实现对比，含本移植做错的两处
 - `bench/`：四个 benchmark 源（`mma_bench` 在上游 `diagnostics/bench/` 下），
   口径与 `results/` 一致

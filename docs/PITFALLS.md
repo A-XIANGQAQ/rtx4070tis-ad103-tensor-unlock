@@ -643,6 +643,44 @@ EFI_STATUS GuBootOpen(...) {
 | 日志桩 | 只保留最后一次 `Write` 的内容 | 逐次追加，因为 `GuLog` 一行一次 `Write` |
 | ESP 几何 | 已在用这台机器的真值 | 保留（disk 3 / 分区 1 / sector 2048 / 614400 扇区） |
 
-修完 `test_boot_io` 第一次返回 0：615 checks / 8 cases。四个套件同时变绿
+修完 `test_boot_io` 第一次返回 0：615 checks / 8 cases。当时四个套件同时变绿
 （`app_flow` 272 checks / 15 scenarios、`guards` 17 cases、
-`efi_transaction` 90 scenarios、`boot_io` 615 checks）。
+`efi_transaction` 120 scenarios、`boot_io` 615 checks）；第五个
+`test_msi_release` 随后靠 #15 那次修复才跑起来。
+
+## 15. 为了绕过 `GpuChild()` 而放宽的图检查，修好匹配器之后变成了「检查没跑就宣告成功」
+
+`GpuChild()` 的匹配 bug（见 #2、#3）当年是这么绕过的：把 `msi_release.c` 里九处
+图比较从硬失败改成「记一行日志然后继续」。
+
+```c
+if(s==EFI_SUCCESS&&!Expected(stage-1,FALSE)){GuLog("stage %zu pre-graph drifted; continuing\n",(size_t)stage);}
+if(s==EFI_SUCCESS&&Alive()!=EFI_SUCCESS){GuLog("stage %zu console changed; continuing\n",(size_t)stage);}
+if(s==EFI_SUCCESS&&Gops(FALSE)!=EFI_SUCCESS){GuLog("stage %zu gop enumeration failed; continuing\n",(size_t)stage);}
+```
+
+`GpuChild()` 修好之后这批分支再没被触发过。硬件日志能证明：真正解锁成功的
+`RUN0005` 与 `RUN0006` 里一行 drift 都没有，它们只出现在 `GpuChild()` 修好之前的
+`RUN0001`/`RUN0002`/`RUN0004`。
+
+其中两处比死代码更糟：
+
+```c
+else if(!ConfigStable(c))GuLog("release: pci config drifted (tolerated)\n");
+else if(...attrs!=Plan.attributes)GuLog("release: attributes ... (tolerated)\n");
+```
+
+它们是 `else if` 链的末段，命中后 `failed` 仍然是 `NULL`，于是 `GuMsiReleased()`
+返回 `TRUE` —— **配置检查和属性检查根本没跑，却被当成通过**。
+
+判断这批代码该不该在，不要读注释，查两个东西：上游同名文件对应行是不是硬失败
+（`origin/main:windows/ad104-msi/msi_release.c` 是 `s=EFI_NOT_READY` 与
+`failed="config-drift"`），以及真实成功日志里有没有这些行。两个都对上之后
+恢复硬失败，`test_msi_release` 也随之第一次跑通（763156 checks / 47 cases）。
+
+保留的一条是上游自带的 `PCI status drift tolerated`（`ConfigStable()` 里），
+它的条件很窄：`Gu.flrs==1`、只允许在 `0x80` 这一个 dword 上、
+`Plan.config[0x78/4]==0x0012b410`、且漂移位必须在 `0x00090000` 之内。
+
+**这类「放宽」的共同点**：当时是为了让某次运行过掉，事后没人记得它的存在理由。
+它的保质期只到被绕过的那个 bug 修好为止。

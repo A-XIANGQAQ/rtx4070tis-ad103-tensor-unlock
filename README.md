@@ -329,19 +329,23 @@ blank 过了 / blank 过了又停 / 跳过 / 截断），并对「事务跑完�
 覆盖，而在初始化路径。现在入口接受两种状态：stock `SS1==1`、blank `SS0==SS1==0`，
 `test_efi_transaction` 的 30 个场景各跑 4 组 permutation 覆盖这两种。**改动未上硬件验证。**
 
-四个测试套件现在都在这个端口上跑得起来，全部返回 0：
+五个测试套件现在都在这个端口上跑得起来，全部返回 0：
 
 | 套件 | 规模 | 之前为什么跑不了 |
 |---|---|---|
 | `test_app_flow` | 272 checks / 15 scenarios | — |
 | `test_guards` | 17 admission cases | 两处 device id 写的是上游 AD104 的 `0x2782` |
-| `test_efi_transaction` | 90 scenarios | 配置空间、寄存器初值、FWSEC 几何、WPR2 桩全是上游卡的常量 |
+| `test_efi_transaction` | 120 scenarios（30 × 4 permutation） | 配置空间、寄存器初值、FWSEC 几何、WPR2 桩全是上游卡的常量 |
 | `test_boot_io` | 615 checks / 8 cases | pin 了上游 3086728 字节的 bootmgr，这台是 3086680 |
+| `test_msi_release` | 763156 checks / 47 cases | 要三份从驱动镜像里截出来的 `driver-*.bin`，这台没有；另有三处夹具写死上游的 bus、chip id 和 BAR 长度 |
 
-最后一个跑起来之后找到一个真 bug：`Sealed` 是会话级状态，只在关日志时置位、
+`test_boot_io` 跑起来之后找到一个真 bug：`Sealed` 是会话级状态，只在关日志时置位、
 从不复位，所以第二次 `GuBootOpen` 之后所有诊断静默消失。固件只调用一次，
-出货路径没被打到过。
+出货路径没被打到过。`test_msi_release` 跑起来之后也找到一处：移植期为了绕过
+`GpuChild()` 的匹配 bug，把九处图检查从硬失败改成了「记一行继续」，`GpuChild()`
+修好之后它们成了死代码，其中两处还是 `else if` 分支，命中后 `failed` 仍是 `NULL`，
+等于配置检查没跑就宣告成功。现在已恢复硬失败。
 
-移植期撞到的坑：[docs/PITFALLS.md](docs/PITFALLS.md)（14 条，含 cuBLAS alpha 与
-`Sealed` 那条）。
+移植期撞到的坑：[docs/PITFALLS.md](docs/PITFALLS.md)（15 条，含 cuBLAS alpha、
+`Sealed` 那条、以及为了绕过 `GpuChild()` 而放宽的图检查）。
 路走到哪、重跑看什么：[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
