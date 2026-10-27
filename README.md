@@ -322,7 +322,7 @@ windows\ad103-2705\rebuild-efi.ps1 -List
 验证（三个 benchmark 的 `.exe` 不进仓库，需要本机编）：
 
 ```powershell
-bench\build-cublas.cmd      # cuBLAS GEMM，需要 CUDA + MSVC（vcvars64 在 PATH 或用 %VCVARS64%）
+bench\build-cublas.cmd      # cuBLAS GEMM，需要 CUDA + MSVC
 bench\build-fp8mma.cmd      # FP8 issue-rate
 
 # mma_bench / gemm_check 的源码在上游 diagnostics\bench\ 下，或用 -BenchDir 指到你现有的目录
@@ -331,6 +331,13 @@ bench\build-fp8mma.cmd      # FP8 issue-rate
 tools\verify-unlock.ps1 -RunNumber 5
 tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\gemm_check.exe'
 ```
+
+两个 `.cmd` 自己找 `vcvars64.bat`：先看 `%VCVARS64%`，没有就用
+`vswhere.exe` 问 Visual Studio 装在哪，再退到两个固定路径，都找不到才报
+`Could not find vcvars64.bat`。编译输出写进 `%TEMP%\<脚本名>.log` 后过滤掉
+MSVC 的 C4819（CUDA 头文件在 936 代码页下的无关警告），成功打 `BUILD-OK`，
+失败打 `BUILD-FAILED see …` 并返回 1。它在编译前会先删掉旧的 `.exe`，所以
+看到 `BUILD-OK` 时那个 exe 一定是这次编出来的。
 
 `verify-unlock.ps1` 先读 `nvidia-smi` 的频率/功耗/降频原因，会明确告诉你这次采样的
 绝对值能不能用；然后算 `f16/f32 ÷ f16/f16` 这个「活比值」（stock ~0.50，解锁 1.00），
