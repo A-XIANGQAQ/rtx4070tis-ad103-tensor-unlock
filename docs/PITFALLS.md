@@ -478,7 +478,8 @@ nvidia-smi --query-compute-apps=pid,process_name
 低两字节恰好是 `0x0000`，于是 `alpha` 被读成 `__half 0.0`。结果每个输出元素都是
 `0*A*B + 0*C = 0`，**矩阵全零**，kernel 的实际工作量塌掉，计时器被自己的 bug 缩短。
 
-本机决定性证据（`bench/probe_f16acc.cu`，同一份数据同一张卡）：
+本机决定性证据（`bench\build.cmd f16acc` 编出来的 `probe_f16acc.exe`，
+同一份数据同一张卡）：
 
 ```
 float-alpha  (float* as compute16F scales):  4188.85 TF/s   (0.262 ms/gemm)
@@ -486,6 +487,10 @@ float-alpha  (float* as compute16F scales):  4188.85 TF/s   (0.262 ms/gemm)
 half-alpha   (correct compute16F scales)  :   143.77 TF/s   (7.648 ms/gemm)
    nonzero C: 67108852 / 67108864
 ```
+
+这个探针现在还能跑（`bench\build.cmd f16acc`），在 320 W 的 stock 卡上重跑一次
+是 `4668.65 / 152.90 TF/s`，`nonzero C` 仍然是 `0` 与 `67108852`。绝对值随频率和
+功耗上限移动，全零与非零这两件事不动——所以判据看 `nonzero C`，不看 TF/s。
 
 **改法**：`alpha`/`beta` 的类型跟着 `computeType` 走。
 
