@@ -178,8 +178,9 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 
 注：这台机器的 ESP 是 disk 3 分区 1，300 MB。`Inspect()` 的多盘容忍和上面三个
 bug 的修复在同一个 EFI 里。`H:\EFI\BOOT\BOOTX64.EFI` 现在是 104960 B /
-`ee440d7f…`（含 blank 入口态那处改动），上一版 104448 B / `76fee036…`
-留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；只有回头试 ESP 时才用得上。
+`64d70365…`（含 blank 入口态与 `Sealed` 复位两处改动），上一版 104448 B /
+`76fee036…` 留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；
+只有回头试 ESP 时才用得上。
 
 ## 320 W VBIOS override 与 SM 解锁的冲突（改在解锁侧，未上硬件）
 
@@ -221,6 +222,18 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 
 **这一步只在离线仿真里过了，没有上硬件。** 真机上要冷启动一次才知道 blank 态到底
 能不能走完事务。
+
+`H:\EFI\BOOT\BOOTX64.EFI` 已经是含这处改动的版本（104960 B / `64d70365…`），
+`RUN0013` 就是这一版的第一次硬件尝试。判据只有一条：日志长度。
+
+| 日志 | 含义 |
+|---|---|
+| 285 B，三行，`cold-profile selector mismatch` | blank 态没有被接受（改动没生效，或 EFI 不是这一版） |
+| 有 `cold-profile blank selectors: SS0=0 SS1=0, accepted as no-override entry state` | 闸门过了，接着看它走到哪一步 |
+| 出现 `Transaction result=` | 事务跑完了，进 Windows 后按下一节验算力 |
+
+如果停在 `blank selectors` 之后，说明被拒的位置在 `unlock_610.c` 的主闸门或更后面，
+`STOP:` 行里的 `stage=` 会指明是哪一段。
 
 ## 开机后怎么确认（照这个做）
 
