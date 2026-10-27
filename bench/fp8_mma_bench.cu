@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: MIT
 /*
  * fp8_mma_bench: FP8 (E4M3) tensor-core instruction issue rate on sm_89.
  *

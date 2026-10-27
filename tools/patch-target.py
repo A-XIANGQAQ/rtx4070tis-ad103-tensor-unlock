@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Patch the AD104-MSMI Windows port to a captured AD103/2705 machine profile.
 
 Consumes `capture-constants.json` produced by gen_profile.py plus separately

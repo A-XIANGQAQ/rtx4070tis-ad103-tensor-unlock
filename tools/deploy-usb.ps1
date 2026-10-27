@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
   Copy one EFI onto a FAT32 USB stick so the firmware can boot it.

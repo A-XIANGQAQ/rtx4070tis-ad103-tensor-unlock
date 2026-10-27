@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# This file embeds the C body of profile.c, which comes from gpu-unlock-ada
+# (GPL-2.0-only). The embedded template is a derivative work, so this file
+# carries the upstream licence even though everything around it is ours.
 """Generate an AD103/2705 profile.c from a schema-4 AD104-PROBE capture.
 
 Mirrors vendor/vbios_610.c (gpu_unlock_vbios_fwsec) byte-for-byte in Python so the

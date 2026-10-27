@@ -1,4 +1,5 @@
 #Requires -RunAsAdministrator
+# SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
   Install the AD103 unlock EFI onto the internal ESP by taking over the file the

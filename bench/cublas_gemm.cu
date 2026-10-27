@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: MIT
 /*
  * cublas_gemm.cu — end-to-end cuBLAS GEMM throughput, the same instrument the
  * upstream issue #14 (RTX 3070) used to show 44.4 -> 80.2 TF/s.

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: MIT
 <#
 .SYNOPSIS
   Post-unlock verification: transaction log + instruction issue rate + numerics,

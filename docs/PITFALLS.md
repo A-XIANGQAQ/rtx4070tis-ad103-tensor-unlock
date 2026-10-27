@@ -728,7 +728,10 @@ else if(...attrs!=Plan.attributes)GuLog("release: attributes ... (tolerated)\n")
 （当前在 `gen_profile.py` 的 `:330-344`），否则下一次重新生成会静默覆盖掉。
 
 生成器本身在本仓库里有一份跟踪的副本 `tools/gen_profile.py`，与
-`rtx2705` 下那份逐字节相同（都是 18102 B / `03D06D66...`）。改模板时两份都要改。
+`rtx2705` 下那份逐字节相同（都是 18587 B / `928832CC...`）。改模板时两份都要改。
+
+那份副本带 `GPL-2.0-only` 标识不是笔误：它内嵌了上游 `profile.c` 的函数体，按 GPL
+算衍生作品。其余脚本与 `bench/` 下的探针都是 MIT。
 
 判断仓库里这份和生成器有没有漂移，不要读代码，直接重生成再比哈希：
 

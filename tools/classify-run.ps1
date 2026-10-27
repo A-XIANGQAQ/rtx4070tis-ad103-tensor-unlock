@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 # Classify one AD104 run log. ASCII output on purpose: this gets pasted into
 # issues and diffed, and the portable terminal encoding is not worth fighting.
 #

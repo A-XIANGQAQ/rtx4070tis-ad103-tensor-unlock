@@ -359,8 +359,15 @@ tools\verify-unlock.ps1 -RunNumber 5; "exit=$LASTEXITCODE"
 
 ## 关于本仓库的代码
 
-`bench/` 下的四个 `.cu` 和 `tools/` 下的脚本是自己写的，MIT。上游 GPL-2.0 的代码没有
-复制进来，用法是在上游仓库上打本仓库记录的补丁。
+`bench/` 下的 `.cu`、`bench/` 下的 `build*.cmd`、以及 `tools/` 下除一个文件之外的脚本
+都是自己写的，MIT。每个文件首行带 SPDX 标识，不用去猜。
+
+例外是 `tools/gen_profile.py`：它把上游 `windows/ad104-msi/profile.c` 的 C 函数体整段
+内嵌成模板字符串（`profile.c` 本身是生成文件，不内嵌就得每次都手工抄一遍）。按 GPL-2.0
+这算衍生作品，所以那个文件标的是 `GPL-2.0-only`，不是 MIT。
+
+补丁的做法见[复现](#复现)一节。`tools/patch-target.py` 只改数值、不改结构；和上游共有的
+行只有 `import argparse`、`def main() -> None:` 这类每个 Python 脚本都有的样板。
 
 `results/` 里是原始 benchmark 输出，`SHA256SUMS` 可复核（在 `results/` 下
 `sha256sum -c SHA256SUMS`，或 PowerShell 逐行比对）。里面有两份标记为异常的样本：

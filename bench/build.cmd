@@ -1,4 +1,5 @@
 @echo off
+rem SPDX-License-Identifier: MIT
 rem Builds the CUDA probes in this directory. The .exe files are not tracked.
 rem   build.cmd cublas    cuBLAS GEMM throughput (N, iters, reps)
 rem   build.cmd fp8mma    FP8 e4m3 issue rate through mma.m16n8k32
