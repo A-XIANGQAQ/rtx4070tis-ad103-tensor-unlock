@@ -593,7 +593,8 @@ if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!
 `0x5053000` 那两个硬编码**不是残留**：`gsp_ga10x.bin` 的 `.fwimage` 段就是
 `0x5053000`，radix 计划 `[1,1,41,20563]` 由此推出。
 
-修完之后 `test_efi_transaction` 第一次返回 0：90 scenario / 120 条 integration 行。
+修完之后 `test_efi_transaction` 第一次返回 0：30 scenario / 120 条 integration 行
+（当时计数器还写着 `SCENARIO_COUNT*3`，所以打印的 90 是错的，见 #15 那次的修正）。
 `test_guards` 的 17 个 admission case 也全过。
 
 **顺序教训**：不要一次把可疑常量全改掉。跑一次、看一条断言、改一条。
