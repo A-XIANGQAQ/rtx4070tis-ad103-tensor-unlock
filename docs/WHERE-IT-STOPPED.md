@@ -267,23 +267,28 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 | `1ecaf35` | 104448 | `9092110A` | 没上过。只动了 rebuild-efi.ps1 |
 | `dcda05c` .. `c80b09f` | 104448 | `BFC70FF1` | 没上过。`app.c` 里 release 之后两种拒绝拆成两个 stage，`app.c` 是编进镜像的 |
 | `1fd73d4` .. `cce9fda` | 105472 | `250C7EA1` | 没上过。`GuAd104Prepare()` 里十一处静默拒绝各自命名，镜像因此长了约 1 KiB |
-| `34983b3` | 105472 | `75314A88` | 没上过。`GuEnableMaster()` 里选择器复比失败时把现场值和闸门存下的值一起打出来 |
+| `34983b3` .. `1b11c35` | 105472 | `75314A88` | 没上过。`GuEnableMaster()` 里选择器复比失败时把现场值和闸门存下的值一起打出来 |
+| `e3da9f9` | 105472 | `8BEEE6FE` | 没上过。`GuAd104Prepare()` 里最后一处静默拒绝（`GuLatchEntrySelectors()`）也报名字了 |
 
 **只有 `76FEE036` 真正解锁过这块卡。** 从 `cef0935` 往后每一版都没上过机，
 所以「能解锁的那版」和「肯接受 320 W override 留下的 blank 态的那版」之间，
 只隔一个提交：`c794f3e` → `cef0935`。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `75314A88`（105472 B）。这一版与 `250C7EA1`
-的差别只有一处：`GuEnableMaster()` 有十一条 `goto fail`，而 `fail:` 只打状态字，
-所以拒绝时分不出是哪一条。其中「选择器在最后一次比对与使能 BME 之间被改写」
-是 override 环境下最可能发生的一条，现在它把现场的 `SS0`/`SS1` 与闸门存下的
-一对一起打出来。相比 `250C7EA1` 的另一处是 `GuAd104Prepare()` 把十一个检查从
-两个状态码里拆出来，每一处各打一行 `cold-prepare: ...`。两处都只影响被拒时
-屏上有几个字，不影响放行时的行为。
+`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `8BEEE6FE`（105472 B）。与 `250C7EA1` 相比有三处差别，
+都只影响被拒时屏上有几个字，不影响放行时的行为：
+
+- `GuAd104Prepare()` 把十一个检查从两个状态码里拆出来，每一处各打一行
+  `cold-prepare: ...`。
+- `GuEnableMaster()` 有十一条 `goto fail`，而 `fail:` 只打状态字，所以拒绝时分不出是哪
+  一条。其中「选择器在最后一次比对与使能 BME 之间被改写」是 override 环境下最可能
+  发生的一条，现在它把现场的 `SS0`/`SS1` 与闸门存下的一对一起打出来。
+- `GuAd104Prepare()` 末尾那一处 `GuLatchEntrySelectors()` 失败也报名字了。它拒的是
+  `0xffffffff`、`0xbadf0000..`、已解锁的一对、以及 `SS1>0xf`。
+
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
-`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，上一版 `250C7EA1` 留作
-`H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-065815`，`BFC70FF1` 那份留作
-`H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-064335`。
+`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，上两版 `75314A88` 与 `250C7EA1` 留作
+`H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-070815` 与 `BOOTX64.EFI.bak-20261028-065815`，
+`BFC70FF1` 那份留作 `H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-064335`。
 
 它随时能换回去，但换回去之后只有一种情况能用：注册表里没挂 VBIOS override。
 `76FEE036` 的二进制里没有 blank 入口态那道闸门（搜 `blank selectors` 命中 0，

@@ -397,7 +397,14 @@ EFI_STATUS GuAd104Prepare(VOID) {{
   if(!fwsec_ok){{GuLog("cold-prepare: gpu_unlock_vbios_fwsec or GuAd104FwsecMatches rejected the descriptor\\n");return EFI_COMPROMISED_DATA;}}
   if(!again_ok){{GuLog("cold-prepare: config or selectors changed during the read (after=%#x %#x before=%#x %#x)\\n",after0,after1,ss0,ss1);return EFI_COMPROMISED_DATA;}}
   Gu.prom_verified=TRUE;
-  if(!GuLatchEntrySelectors(ss0,ss1)){{Gu.prom_verified=FALSE;return EFI_NOT_READY;}}
+  /* Eleven refusals above now name themselves. This one still did not, and it
+   * is the one an inaccessible BAR0 produces: GuLatchEntrySelectors() rejects
+   * 0xffffffff, 0xbadf0000.., an already-unlocked pair and any SS1 above 0xf
+   * without saying which. Name the pair it refused. */
+  if(!GuLatchEntrySelectors(ss0,ss1)){{
+    GuLog("cold-prepare: GuLatchEntrySelectors refused SS0=%#x SS1=%#x\\n",ss0,ss1);
+    Gu.prom_verified=FALSE;return EFI_NOT_READY;
+  }}
   Gu.profile_verified=TRUE;return EFI_SUCCESS;
 }}
 '''

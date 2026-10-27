@@ -752,10 +752,10 @@ else if(...attrs!=Plan.attributes)GuLog("release: attributes ... (tolerated)\n")
 它由 `G:\workspace\rtx2705\tools\gen_profile.py` 从探针的
 `captures\CAP0002.JSON` 生成。改闸门（#13 那个 `stock` / `blank` 分支）、
 改 19 个寄存器 pin、改 PROM 哈希，都要改**生成器的模板**
-（当前在 `gen_profile.py` 的 `:330-344`），否则下一次重新生成会静默覆盖掉。
+（当前在 `gen_profile.py` 的 `:371-408`），否则下一次重新生成会静默覆盖掉。
 
 生成器本身在本仓库里有一份跟踪的副本 `tools/gen_profile.py`，与
-`rtx2705` 下那份逐字节相同（都是 18587 B / `928832CC...`）。改模板时两份都要改。
+`rtx2705` 下那份逐字节相同（都是 20650 B / `70913C8B...`）。改模板时两份都要改。
 
 那份副本带 `GPL-2.0-only` 标识不是笔误：它内嵌了上游 `profile.c` 的函数体，按 GPL
 算衍生作品。其余脚本与 `bench/` 下的探针都是 MIT。
@@ -769,7 +769,7 @@ Get-FileHash %TEMP%\genprof\profile.c
 Get-FileHash G:\workspace\gpu-unlock-ada\windows\ad103-2705\profile.c
 ```
 
-两边相等（本机实测都是 `FDD0C589...`）才说明模板和源码一致。
+两边相等（本机实测都是 `74FACB2C...`）才说明模板和源码一致。
 
 生成器同时会把本机的几项事实打进注释里，可以直接当核对用：
 
