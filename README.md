@@ -175,7 +175,8 @@ DLSS on : 126.22 FPS  -> 126.48 FPS     +0.21%
 
 接管 ESP 的 `bootmgfw.efi` 或改 BCD 都能省掉按键，代价是每次开机多 40 秒，并把实验代码
 放进启动关键路径。这条在这台机器上装上去就进不了系统，`install-esp.ps1` 保留但不用，
-详见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
+详见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。它的 `-Rollback`
+现在碰到 `AD104-UNLOCK` 里的 `RUN*.TXT` 会先列出来再拒绝，要给 `-Force` 才删。
 
 普通重启（不断电）不会清掉；只有真正断电才需要重来。两头都有实测：
 

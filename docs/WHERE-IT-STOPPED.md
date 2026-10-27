@@ -347,8 +347,9 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
 
 1. **先建立退路**。在做任何 ESP 改动之前，确认 BIOS 有 `Boot From File`，能选到
    `\EFI\Microsoft\Boot\bootmgfw.orig.efi`。这是不依赖外部介质的唯一恢复路径。
-2. **不要先回滚再看日志**。`install-esp.ps1 -Rollback` 删 `AD104-UNLOCK`。
-   卡住后先挂 ESP 读日志（`mountvol W: /S`），再决定是否回滚。
+2. **先看日志再回滚**。`install-esp.ps1 -Rollback` 要删 `AD104-UNLOCK`，现在它会先
+   把里面每个 `RUN*.TXT` 的名字、大小、时间打出来再拒绝，除非给 `-Force`——那是这种事
+   发生过一次之后才加上的。卡住时先挂 ESP 读日志（`mountvol W: /S`），再决定是否回滚。
 3. **U 盘留作救援**，不作为日常介质。U 盘会坏，这是它不适合当唯一路径的原因。
 
 要非易失，换形状：独立 FAT32 分区 + 固件启动项，不劫持 `bootmgfw.efi`。容量要求与

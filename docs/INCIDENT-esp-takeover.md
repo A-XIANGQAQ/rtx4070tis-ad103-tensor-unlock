@@ -63,7 +63,8 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 ### 无法再确认的一点
 
 `install-esp.ps1 -Rollback` 会删除 `\AD104-UNLOCK`，所以「EFI 有没有跑到写日志那一步」
-无法回答。卡住时先挂 ESP 读日志（`mountvol W: /S`），再决定要不要回滚。
+无法回答。卡住时先挂 ESP 读日志（`mountvol W: /S`），再决定要不要回滚。这一条也是
+后来给脚本加守卫的原因：目录里有 `RUN*.TXT` 时它先列出来再拒绝，`-Force` 才继续。
 
 旁证：三种独立实现里，ESP 接管都是最不成熟的那条。
 `MatchaCake/ad102-windows-unlock` 把「ESP 常驻 + `bcdedit` 接管」标为「未测试，仅设计文档」；
