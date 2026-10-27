@@ -599,3 +599,50 @@ if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!
 **顺序教训**：不要一次把可疑常量全改掉。跑一次、看一条断言、改一条。
 上面那张表里 `0x5053000` 差一点被当成上游残留改掉，是「只改当前断言指的那一条」
 这个纪律把它挡住的。
+
+## 14. `Sealed` 是会话级状态，但只在关日志时置位、从不复位
+
+`test_boot_io` 在这个端口上也从来跑不起来：它 pin 了上游的 bootmgr 长度
+`3086728`，这台机器是 `3086680`，case 循环在第一次长度检查就中止，
+后面的 case 一个都没执行过。
+
+把夹具改成读实际长度之后，case 0 通过，case 3 之后开始出现
+`Gu.fault` 为真但日志里什么都没有的现象。原因是 `boot_io.c` 的两个静态量：
+
+```c
+static BOOLEAN Silent,Sealed;
+...
+VOID GuLog(...) { if(Sealed||!Log)return; ... }
+...
+EFI_STATUS GuBootClose(VOID) { ...; if(s==EFI_SUCCESS)Sealed=TRUE; return s; }
+```
+
+`GuBootOpen` 从前不复位 `Sealed`。固件只调用一次，所以出货的路径**
+没有暴露过**这个问题——但任何「关掉再打开」的用法都会在第二次静默丢弃
+全部日志，而且 `GuLog` 是静默返回的，调用方看不出是日志没写还是代码没跑。
+
+改法是在会话开始处复位，与 `Log=NULL` 的语义对齐：
+
+```c
+EFI_STATUS GuBootOpen(...) {
+  if(Table)return EFI_ALREADY_STARTED;
+  ...
+  Sealed=FALSE;
+  Table=t;Self=image;
+```
+
+这类状态位的通病：置位点写得清清楚楚，复位点依靠「只会用一次」这个
+未写下来的假设。判据不是读代码，是让第二个会话真的发生一次。
+
+**同时修掉的夹具问题**（`tests/test_boot_io.c`）：
+
+| 项 | 原样 | 改法 |
+|---|---|---|
+| bootmgr 长度 | pin `3086728` | `FileAuto()` 读实际大小（Windows 更新会换掉它） |
+| `BAD_WINDOWS_HASH` | 改一字节后要求 `LoadWindows` 失败 | 这个端口故意不 pin 摘要，改成 `CHANGED_WINDOWS_IMAGE`：改了也必须能交棒 |
+| 日志桩 | 只保留最后一次 `Write` 的内容 | 逐次追加，因为 `GuLog` 一行一次 `Write` |
+| ESP 几何 | 已在用这台机器的真值 | 保留（disk 3 / 分区 1 / sector 2048 / 614400 扇区） |
+
+修完 `test_boot_io` 第一次返回 0：615 checks / 8 cases。四个套件同时变绿
+（`app_flow` 272 checks / 15 scenarios、`guards` 17 cases、
+`efi_transaction` 90 scenarios、`boot_io` 615 checks）。
