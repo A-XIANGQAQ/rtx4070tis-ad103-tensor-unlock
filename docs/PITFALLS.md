@@ -539,8 +539,10 @@ STOP: stage=read-only-cold-profile status=0x8000000000000006 mutated=0 retained=
 **根因不是「override 覆盖了 SS0」**。逐字节比对四个 payload 和原厂 ROM：
 
 - `power_default_w` 在窗口 `0xBF89`，`power_max_w` 在 `0xBF8D`，单位 mW
-- v2（default 320 / max 320）与 v1（default 285 / max 320）只差 **3 字节**：
-  `0xBF89 4859->00e2`（285000->320000）和一个 additive_checksum 字节
+- v2（default 320 / max 320）与 v1（default 285 / max 320）差 **7 字节 / 4 段**：
+  `0xBF89 4859->00e2`（285000->320000）、两处输入电流槽 `0xC206` 与 `0xC261` 各
+  `546f->d084`（28500->34000 mA）、`0xFBFF` 一个 additive_checksum 字节。只差
+  3 字节的是 `v1 -> b320`（默认档加校验和），b320 没动电流槽
 - 512 KiB 窗口的校验和规则是 `sum(0..0xFBFF) + b[0xFBFF] ≡ 0 (mod 256)`，
   五个镜像（含原厂 dump）全部符合
 - 四个 payload 里搜 `0x0082381c` / `0x00823820` / `0x00823804` / `0x27304036`
@@ -549,9 +551,13 @@ STOP: stage=read-only-cold-profile status=0x8000000000000006 mutated=0 retained=
 所以 override 镜像里根本没有 SM 寄存器初值。冲突来自固件初始化路径被改变，
 不是某个字段被覆盖。
 
-**`RUN0006` 是反证**：同一套 override 机制下，v1 payload 那次冷启动
-`entry: plm=0xffffff8f ss0=0x27104036 ss1=0x1`，`SS1=1` 正常，事务全程通过。
-而把 `power_default_w` 拉成 320 之后，六次全部读 0。
+`RUN0006`（10-27 20:54:40）那次冷启动读到
+`entry: plm=0xffffff8f ss0=0x27104036 ss1=0x1`，`SS1=1` 正常，事务全程通过；
+此后六次全部读 0。但**那次开机挂着哪一份 override 没有直接证据**：
+`load-v2.log`（21:06:32）的 `before.vbios` 是 v1 的窗口哈希，证明那一刻注册表里
+是 v1；`loader-payload.bin` 的 mtime 是 20:44，20:44 到 21:06 之间没有任何 load
+日志；唯一的注册表快照 `classkey-0001-before-coldboot.reg` 是 23:21:37 取的，
+里面已经是 v2。所以「v1 能过、v2 不能过」只有时间顺序的旁证，没有直接证据。
 
 **改法**：让解锁侧接受两种入口态，不去动 override 那边。
 
