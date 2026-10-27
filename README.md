@@ -279,8 +279,17 @@ tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\
 ```
 
 `verify-unlock.ps1` 先读 `nvidia-smi` 的频率/功耗/降频原因，会明确告诉你这次采样的
-绝对值能不能用；然后用 `results/mma-baseline.txt` 算比值，并单独打印
-`f16/f32 ÷ f16/f16` 这个「活比值」（stock ~0.50，解锁 1.00）。
+绝对值能不能用；然后算 `f16/f32 ÷ f16/f16` 这个「活比值」（stock ~0.50，解锁 1.00），
+判定就看它。对 `results/mma-baseline.txt` 的逐模式比值只作为表格上下文打印——那批基线是
+在 285 W 下采的，本机现在跑 320 W，跨日跨功耗的绝对值不可比；控制项一旦漂过 15%，
+脚本会单独提示「这是频率，不是门」。
+
+最后有一节 `overall` 汇总四项并通过 `exit` 返回：0 = 四项全过，1 = 有不过的。
+可以直接拿它当 CI 判据：
+
+```powershell
+tools\verify-unlock.ps1 -RunNumber 5; "exit=$LASTEXITCODE"
+```
 
 ## 关于本仓库的代码
 

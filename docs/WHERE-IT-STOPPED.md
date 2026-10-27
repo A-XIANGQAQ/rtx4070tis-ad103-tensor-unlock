@@ -327,7 +327,8 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
 ```
 
 它会先读 `nvidia-smi` 的频率/功耗/降频原因（不是 `0x1` 就打「本次绝对值不可用」），
-再算比值，并单独打印 `f16/f32 ÷ f16/f16` 这个活比值。
+再算 `f16/f32 ÷ f16/f16` 这个活比值并据此判定；末节 `overall` 汇总四项，
+`exit 0` 表示全过、`exit 1` 表示有不过的。
 
 真出现 `STOPPED. Power OFF fully; …` 说明门是软件拒的，硬件安全，**不用断电**：
 直接 Ctrl+Alt+Del 走 Windows Boot Manager 进去测。断电会清掉 `SS0`/`SS1`。

@@ -6,14 +6,23 @@
 
 .DESCRIPTION
   Four checks:
-    1. transaction log   result=0 safe=1 ... flrs=1 DMA_live=0
-    2. issue rate        f16/f32 and bf16/f32 ~2x, four control modes unchanged
-    2b. FP8             e4m3/f32 ~1.9x (this DOES move -- see the note in section 2b)
-    3. numerics         gemm_check failures=0
+    1.  transaction log   result=0 safe=1 ... flrs=1 DMA_live=0
+    2.  issue rate        f16/f32 / f16/f16: stock ~0.50, unlocked ~1.00
+    2b. FP8               e4m3/f32 ~1.9x (this DOES move -- see the note in section 2b)
+    3.  numerics          gemm_check failures=0
 
   Ratio is the criterion, never the absolute number. A downclocked card reports
   f16/f32 ~= 88 TF/s, which is exactly the stock value; judging on absolutes
   will call a working unlock "not applied".
+
+  The per-mode table against results/mma-baseline.txt is context, not the verdict.
+  Every mode on this card shares one SM clock, so a run that is 5% slow moves all
+  six columns at once. The recorded baseline was also collected at power.limit
+  285 W and this machine now runs a 320 W override, so cross-day absolutes are
+  not comparable.
+
+  The last section, "overall", exits 0 when all four pass and 1 otherwise, so the
+  script is usable as a CI gate instead of something a human has to read.
 
 .PARAMETER LogRoot
   Drive letter holding AD104-UNLOCK\RUNxxxx.TXT (default H:, the USB stick).
@@ -142,6 +151,7 @@ if (-not $run) {
     } else {
         Write-Host "  no 'Transaction result=' line. Last 20 lines:" -ForegroundColor Yellow
         ($txt -split "`n" | Select-Object -Last 20) | ForEach-Object { "    $_" }
+        Write-Host "  CRITERION 1: FAIL - the transaction never reported a result" -ForegroundColor Red
     }
     # The three historical failure shapes -- any of these means the run did not hand off.
     foreach ($k in 'graph missing', 'finish incomplete', 'GPU finish after close', 'STOP:') {
@@ -168,13 +178,12 @@ if (-not $out) {
         Write-Host ""
         Write-Host ("  {0,-10}{1,10}{2,10}{3,9}   {4}" -f 'mode', 'stock', 'now', 'ratio', 'verdict')
         Write-Host ("  " + ("-" * 58))
-        $gainOk = $true; $ctrlOk = $true
+        $ctrlOk = $true
         foreach ($mode in 'f16/f32', 'bf16/f32', 'f16/f16', 's8/s32', 'dp4a', 'ffma') {
             if (-not ($now.ContainsKey($mode) -and $stock.ContainsKey($mode))) { continue }
             $a = $stock[$mode]; $b = $now[$mode]; $r = if ($a) { $b / $a } else { 0 }
             if ($mode -in @('f16/f32', 'bf16/f32')) {
-                $v = if ($r -gt 1.3) { 'GAIN' } else { 'NO GAIN' }
-                if ($r -le 1.3) { $gainOk = $false }
+                $v = if ($r -gt 1.3) { 'GAIN' } else { 'no gain' }
             } else {
                 $v = if ($r -gt 0.85 -and $r -lt 1.15) { 'control ok' } else { 'CONTROL DRIFTED' }
                 if ($r -le 0.85 -or $r -ge 1.15) { $ctrlOk = $false }
@@ -183,18 +192,36 @@ if (-not $out) {
         }
         # Absolute-free verdict: the two FP32-accumulate modes should be as fast as
         # the FP16-accumulate mode once unlocked. That comparison survives a downclock
-        # because both sides move together.
+        # because both sides move together. This is the criterion; the ratio against a
+        # recorded baseline is only a sanity check, because it is measured against a
+        # different power cap and a different day.
+        $liveVerdict = 'UNKNOWN'
         if ($now.ContainsKey('f16/f32') -and $now.ContainsKey('f16/f16') -and $now['f16/f16']) {
             $live = $now['f16/f32'] / $now['f16/f16']
             Write-Host ("`n  live ratio f16/f32 / f16/f16 = {0:F3}   (stock ~0.50, unlocked 1.00)" -f $live)
-            if ($live -ge 0.90)      { Write-Host "  UNLOCKED" -ForegroundColor Green }
-            elseif ($live -le 0.60)  { Write-Host "  STOCK" -ForegroundColor Yellow }
-            else                     { Write-Host "  AMBIGUOUS - rerun on an idle GPU" -ForegroundColor Yellow }
+            if ($live -ge 0.90)      { $liveVerdict = 'UNLOCKED'; Write-Host "  UNLOCKED" -ForegroundColor Green }
+            elseif ($live -le 0.60)  { $liveVerdict = 'STOCK';    Write-Host "  STOCK" -ForegroundColor Yellow }
+            else                     { $liveVerdict = 'AMBIGUOUS'; Write-Host "  AMBIGUOUS - rerun on an idle GPU" -ForegroundColor Yellow }
         }
-        $ok2 = $gainOk -and $ctrlOk
-        if ($ok2)            { Write-Host "`n  CRITERION 2: PASS" -ForegroundColor Green }
-        elseif ($gainOk)     { Write-Host "`n  CRITERION 2: PARTIAL - gain present, a control mode moved" -ForegroundColor Yellow }
-        else                 { Write-Host "`n  CRITERION 2: FAIL - no gain on the FP32-accumulate modes" -ForegroundColor Red }
+        # The live ratio decides. The table above is context, not the verdict, because
+        # every mode on this card shares one SM clock: a run that is 5% slow shifts all
+        # six columns at once, which moves the baseline ratios without saying anything
+        # about the gate. The recorded baseline was also collected at power.limit 285 W
+        # and this machine now runs a 320 W override, so cross-day absolutes are not
+        # comparable in the first place.
+        $ok2 = ($liveVerdict -eq 'UNLOCKED')
+        if ($ok2) {
+            Write-Host "`n  CRITERION 2: PASS" -ForegroundColor Green
+        } elseif ($liveVerdict -eq 'STOCK') {
+            Write-Host "`n  CRITERION 2: FAIL - the FP32-accumulate modes are at half rate" -ForegroundColor Red
+        } else {
+            Write-Host "`n  CRITERION 2: FAIL - the ratio is neither stock nor unlocked; rerun on an idle GPU" -ForegroundColor Red
+        }
+        if (-not $ctrlOk) {
+            Write-Host "  note: a control mode moved more than 15% against the recorded baseline." -ForegroundColor Yellow
+            Write-Host "  That is the SM clock, not the gate -- see the clock readout in 0/4 and" -ForegroundColor Yellow
+            Write-Host "  docs/PITFALLS.md #11. It does not change the verdict, which is the ratio." -ForegroundColor Yellow
+        }
     } else {
         Write-Host "  baseline missing at $mmaStock" -ForegroundColor Yellow
         $ok2 = $false
@@ -206,6 +233,7 @@ Rule "2b/4  FP8 (E4M3) instruction issue rate"
 # NOTE: FP8 e4m3->f32 IS an FP32-accumulate path and it DOES double.
 # Earlier versions of this script said "FP8 UNCHANGED - expected" and reasoned
 # about DLSS 5 from that. That was wrong: measured 170.63 -> 319.58 TF/s (1.87x).
+$okFP8 = $false
 $fout = Copy-And-Run (Find-Bench 'fp8_mma_bench.exe') @($Iters, $Reps)
 if (-not $fout) {
     Write-Host "  fp8_mma_bench.exe not found" -ForegroundColor Yellow
@@ -224,8 +252,8 @@ if (-not $fout) {
     if ($nowFp8 -and $stockFp8) {
         $fr = $nowFp8 / $stockFp8
         Write-Host ("`n  e4m3/f32   stock {0:F2}  now {1:F2}  ratio {2:F3}" -f $stockFp8, $nowFp8, $fr)
-        if ($fr -gt 1.5) { Write-Host "  FP8 DOUBLED - consistent with the FMLA32/IMLA gate opening" -ForegroundColor Green }
-        else             { Write-Host "  FP8 did NOT double - contradicts the expected gate behaviour" -ForegroundColor Red }
+        if ($fr -gt 1.5) { $okFP8 = $true;  Write-Host "  FP8 DOUBLED - consistent with the FMLA32/IMLA gate opening" -ForegroundColor Green }
+        else             { $okFP8 = $false; Write-Host "  FP8 did NOT double - contradicts the expected gate behaviour" -ForegroundColor Red }
     } else {
         Write-Host "  FP8 baseline ($fp8Stock) or current value missing" -ForegroundColor Yellow
     }
@@ -233,6 +261,7 @@ if (-not $fout) {
 
 # ---------------------------------------------------------------- 3. numerics
 Rule "3/4  numerics"
+$ok3 = $false
 if (-not $GemmCheck) {
     $GemmCheck = @(
         (Find-Bench 'gemm_check.exe'),
@@ -249,8 +278,9 @@ if (-not $GemmCheck) {
         if ($g -match 'failures=(\d+)') {
             $fails = ($g | Select-String -Pattern 'failures=(\d+)' -AllMatches).Matches |
                      ForEach-Object { [int]$_.Groups[1].Value } | Measure-Object -Sum
-            if ($fails.Sum -eq 0) { Write-Host "`n  CRITERION 3: PASS - 0 numerical failures" -ForegroundColor Green }
-            else                  { Write-Host "`n  CRITERION 3: FAIL - $($fails.Sum) numerical failures" -ForegroundColor Red }
+            $ok3 = ($fails.Sum -eq 0)
+            if ($ok3) { Write-Host "`n  CRITERION 3: PASS - 0 numerical failures" -ForegroundColor Green }
+            else      { Write-Host "`n  CRITERION 3: FAIL - $($fails.Sum) numerical failures" -ForegroundColor Red }
         }
     }
 }
@@ -271,5 +301,19 @@ Write-Host @"
   as zero and every GEMM returned an all-zero matrix.
 "@
 if ($Work -and (Test-Path $Work)) { Write-Host "`nbench copies in: $Work" -ForegroundColor DarkGray }
+
+Rule "overall"
+Write-Host ("  log       : {0}" -f $(if ($ok1) { 'PASS' } else { 'FAIL' }))
+Write-Host ("  issue rate: {0}" -f $(if ($ok2) { 'PASS' } else { 'FAIL' }))
+Write-Host ("  FP8       : {0}" -f $(if ($okFP8) { 'PASS' } else { 'FAIL' }))
+Write-Host ("  numerics  : {0}" -f $(if ($ok3) { 'PASS' } else { 'FAIL' }))
+$overall = $ok1 -and $ok2 -and $okFP8 -and $ok3
+if ($overall) {
+    Write-Host "`n  UNLOCK CONFIRMED by all four criteria." -ForegroundColor Green
+    exit 0
+}
+Write-Host "`n  NOT CONFIRMED. A failing criterion above says which part is missing;" -ForegroundColor Red
+Write-Host "  the log alone is never the answer (see the note above)." -ForegroundColor Red
+exit 1
 
 
