@@ -35,6 +35,10 @@ function Classify($item) {
   $mismatchOld   = @($entryRefused | Where-Object { $_ -match 'wantSS1=' })
   $mismatchNew   = @($entryRefused | Where-Object { $_ -match 'stockSS1=' })
   $pinRefused    = @($lines | Where-Object { $_ -match 'cold-profile register mismatch' })
+  # GuAd104Prepare used to fold eleven conditions into one status code with no
+  # message. From 250C7EA1 onward each refusal names itself, so the verdict can
+  # say why instead of just "it refused".
+  $prepareRefused = @($lines | Where-Object { $_ -match '^cold-prepare: ' })
   $stop          = @($lines | Where-Object { $_ -match '^STOP: stage=' })
   # app.c split one ambiguous label into two after the driver let go, so the stage
   # name alone now says which refusal it was.
@@ -91,6 +95,11 @@ function Classify($item) {
     # transaction. Nothing about the card changed; this is a host-side refusal.
     $verdict = 'CLAIM-NOT-HELD'
     $why     = 'the exclusive claim was not held after the driver let go, so nothing ran'
+  } elseif ($prepareRefused.Count -gt 0) {
+    # The first cold-entry gate refused and said why. Earlier builds only gave
+    # EFI_NOT_READY here, so this branch is also how you tell the two apart.
+    $verdict = 'ENTRY-REFUSED-PREPARE'
+    $why     = 'the cold-entry preparation refused before any selector was read'
   } elseif ($stopStage -eq 'post-release-gate' -or $coldRefused.Count -gt 0) {
     # The first gate passed (otherwise this would read entry-refused) and the run
     # got as far as releasing the GPU, then the same check failed. The message
@@ -126,6 +135,7 @@ function Classify($item) {
   if ($bootmgr.Count   -gt 0) { "bootmgr   : " + ($bootmgr[-1] -replace '^bootmgfw: ','') }
   if ($blankAccepted.Count -gt 0) { "blank     : accepted $($blankAccepted.Count)x" }
   if ($coldRefused.Count   -gt 0) { "gate      : " + ($coldRefused[-1]) }
+  if ($prepareRefused.Count -gt 0) { "prepare   : " + ($prepareRefused[-1]) }
   if ($stopStage) { "refusedAt : " + $stopStage }
   if ($txResult.Count  -gt 0) { "tx        : " + ($txResult[-1] -replace '^Transaction result=','') }
   if ($handoff.Count   -gt 0) { "handoffChk: checked" }

@@ -370,16 +370,32 @@ BOOLEAN GuAd104ColdEntry(VOID) {{
 }}
 EFI_STATUS GuAd104Prepare(VOID) {{
   UINT32 ss0,ss1,after0,after1;VOID *prom=NULL;struct gpu_unlock_fwsec fw;
-  if(Gu.started || Gu.fault || Gu.retained || Gu.allocations || Gu.profile_verified ||
-     Gu.prom_verified || !Config() || !Registers(&ss0,&ss1))return EFI_NOT_READY;
-  if(!GuAd104AssetsValid())return EFI_CRC_ERROR;
+  /* Six of these eight used to collapse into one silent EFI_NOT_READY. The last
+   * two report themselves from inside Config() and Registers(); the rest said
+   * nothing, which is why a refused cold entry was indistinguishable from a
+   * stale Gu flag at the console. */
+  if(Gu.started){{GuLog("cold-prepare: the transaction already started\\n");return EFI_NOT_READY;}}
+  if(Gu.fault){{GuLog("cold-prepare: an earlier read faulted\\n");return EFI_NOT_READY;}}
+  if(Gu.retained){{GuLog("cold-prepare: buffers are still retained from an earlier run\\n");return EFI_NOT_READY;}}
+  if(Gu.allocations){{GuLog("cold-prepare: allocations are still outstanding\\n");return EFI_NOT_READY;}}
+  if(Gu.profile_verified){{GuLog("cold-prepare: the profile was already verified\\n");return EFI_NOT_READY;}}
+  if(Gu.prom_verified){{GuLog("cold-prepare: the PROM was already verified\\n");return EFI_NOT_READY;}}
+  if(!Config() || !Registers(&ss0,&ss1))return EFI_NOT_READY;
+  if(!GuAd104AssetsValid()){{GuLog("cold-prepare: an asset is missing or its hash differs\\n");return EFI_CRC_ERROR;}}
   prom=GuAlloc(1048576);if(!prom)return EFI_OUT_OF_RESOURCES;
   GuCopyFromIo(prom,(VOID *)(UINTN)(Gu.bar_base+0x300000),1048576);
-  BOOLEAN valid=!Gu.fault && GuAd104PromMatches(prom,1048576) &&
-    !gpu_unlock_vbios_fwsec(prom,1048576,&fw) && GuAd104FwsecMatches(&fw) &&
-    Config() && Registers(&after0,&after1) && ss0==after0 && ss1==after1;
+  /* One boolean used to fold seven checks into EFI_COMPROMISED_DATA with no
+   * message, so a refused PROM and a refused FWSEC looked identical at the
+   * console. Name the one that gave way; they need different fixes. */
+  BOOLEAN io_ok=!Gu.fault;
+  BOOLEAN prom_ok=io_ok && GuAd104PromMatches(prom,1048576);
+  BOOLEAN fwsec_ok=prom_ok && !gpu_unlock_vbios_fwsec(prom,1048576,&fw) && GuAd104FwsecMatches(&fw);
+  BOOLEAN again_ok=fwsec_ok && Config() && Registers(&after0,&after1) && ss0==after0 && ss1==after1;
   GuFree(prom);
-  if(!valid)return EFI_COMPROMISED_DATA;
+  if(!io_ok){{GuLog("cold-prepare: reading the 1 MiB PROM at BAR0+0x300000 faulted\\n");return EFI_COMPROMISED_DATA;}}
+  if(!prom_ok){{GuLog("cold-prepare: the PROM is not the one this build was pinned to\\n");return EFI_COMPROMISED_DATA;}}
+  if(!fwsec_ok){{GuLog("cold-prepare: gpu_unlock_vbios_fwsec or GuAd104FwsecMatches rejected the descriptor\\n");return EFI_COMPROMISED_DATA;}}
+  if(!again_ok){{GuLog("cold-prepare: config or selectors changed during the read (after=%#x %#x before=%#x %#x)\\n",after0,after1,ss0,ss1);return EFI_COMPROMISED_DATA;}}
   Gu.prom_verified=TRUE;
   if(!GuLatchEntrySelectors(ss0,ss1)){{Gu.prom_verified=FALSE;return EFI_NOT_READY;}}
   Gu.profile_verified=TRUE;return EFI_SUCCESS;
