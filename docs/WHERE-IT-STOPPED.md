@@ -270,12 +270,13 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 | `34983b3` .. `1b11c35` | 105472 | `75314A88` | 没上过。`GuEnableMaster()` 里选择器复比失败时把现场值和闸门存下的值一起打出来 |
 | `e3da9f9` | 105472 | `8BEEE6FE` | 没上过。`GuAd104Prepare()` 里最后一处静默拒绝（`GuLatchEntrySelectors()`）也报名字了 |
 | `baf9649` | 105984 | `DDE1A608` | 没上过。`GuFlr()` 里 reset 前那个五合一静默拒绝也报名字了 |
+| `c0b470a` | 106496 | `208CDD40` | 没上过。`check_entry_selectors()` 在事务内部也报名字了 |
 
 **只有 `76FEE036` 真正解锁过这块卡。** 从 `cef0935` 往后每一版都没上过机，
 所以「能解锁的那版」和「肯接受 320 W override 留下的 blank 态的那版」之间，
 只隔一个提交：`c794f3e` → `cef0935`。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `DDE1A608`（105984 B）。从 `250C7EA1` 往后这三版的改动
+`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `208CDD40`（106496 B）。从 `250C7EA1` 往后这四版的改动
 都只影响被拒时屏上有几个字，不影响放行时的行为：
 
 - `GuAd104Prepare()` 把十一个检查从两个状态码里拆出来，每一处各打一行
@@ -287,11 +288,16 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 - `GuFlr()` 把 reset 前五个前置条件折进一个 `EFI_NOT_READY`，而 `pcie_flr()` 把它变成
   `-EIO`，事务日志里就只剩一个裸的 `result=-5`。现在它打
   `FLR refused: verified=.. fault=.. latched=.. SS0=.. SS1=.. entry=.. .. phase=..`。
+- `check_entry_selectors()` 在事务内部还有三个调用点，每个都把拒绝变成一个 `-EIO`
+  或 `-EPROTO`，日志上只有数字。现在它打
+  `entry selectors refused: saved=.. verified=.. read=../.. SS0=.. SS1=.. entry=.. ..`，
+  并且只在原来那段短路会读 BAR0 的情况下才去读。
 
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
-`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`；`8BEEE6FE`、`75314A88`、`250C7EA1` 分别留作
-`BOOTX64.EFI.bak-20261028-071718`、`BOOTX64.EFI.bak-20261028-070815`、
-`BOOTX64.EFI.bak-20261028-065815`，`BFC70FF1` 那份留作 `BOOTX64.EFI.bak-20261028-064335`。
+`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`；`DDE1A608`、`8BEEE6FE`、`75314A88`、`250C7EA1`
+分别留作 `BOOTX64.EFI.bak-20261028-072818`、`BOOTX64.EFI.bak-20261028-071718`、
+`BOOTX64.EFI.bak-20261028-070815`、`BOOTX64.EFI.bak-20261028-065815`，
+`BFC70FF1` 那份留作 `BOOTX64.EFI.bak-20261028-064335`。
 
 它随时能换回去，但换回去之后只有一种情况能用：注册表里没挂 VBIOS override。
 `76FEE036` 的二进制里没有 blank 入口态那道闸门（搜 `blank selectors` 命中 0，
