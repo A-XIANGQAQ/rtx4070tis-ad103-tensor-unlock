@@ -197,8 +197,12 @@ Windows。开完机就可以拔掉 U 盘。
 不值得。工具里的 `install-esp.ps1` 保留但默认不推荐 —— 它在这台机器上**装上去就进不了
 系统**，详见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
 
-普通重启（不断电）不会清掉；只有真正断电才需要重来。实测：同一个 boot 内隔十几分钟
-再测，解锁仍在（见 [results/README.md](results/README.md) 的两轮对照）。
+普通重启（不断电）不会清掉；只有真正断电才需要重来。两头都有实测：
+
+- **同 boot 内**隔十几分钟再测，解锁仍在（两轮对照见 [results/README.md](results/README.md)）。
+- **断电一夜后**（10/27 09:33，boot 07:50:43）实测回到 stock：`f16/f32` 91.4、
+  `f16/f32 ÷ f16/f16 = 0.501`，和 10/25 那条 stock 基线（0.501）分毫不差。
+  原始输出是 `results/mma-stock-after-poweroff.txt` / `fp8-stock-after-poweroff.txt`。
 
 ### 如果机器上同时装了 ESP 接管版
 

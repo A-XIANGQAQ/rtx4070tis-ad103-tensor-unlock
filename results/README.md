@@ -22,6 +22,7 @@ Get-Content SHA256SUMS | ForEach-Object {
 | `cublas-unlocked-run0005.txt` | `bench/cublas_gemm.cu` GEMM，N=8192 | `RUN0005` 那次开机；每用例带 `nonzero C` 校验行 |
 | `mma-unlocked-live.txt` / `fp8-unlocked-live.txt` / `cublas-unlocked-live.txt` | 同上三套 | 同一个 boot 内后来复测（卡跑在 2640 MHz） |
 | `cublas-contaminated.txt` | cuBLAS GEMM | **污染样本**：采集时 GPU 有其他负载，保留作为 `docs/PITFALLS.md` #11 的原始证据 |
+| `mma-stock-after-poweroff.txt` / `fp8-stock-after-poweroff.txt` | 同上两套 | 10/27 09:33 采集。**断电一夜后第一次上电、没走 U 盘引导** —— 易失性的对照组：确认 `SS0`/`SS1` 真的被断电清掉了 |
 
 `*run0005` 与 `*-live` 的 6 行 `#` 头里带 EFI 的 sha256、boot 时刻、日志路径 ——
 拿它和 `H:\AD104-UNLOCK\RUN0005.TXT` 对得上，才能证明「这批数字是那次解锁状态下测的」。
@@ -43,6 +44,30 @@ Get-Content SHA256SUMS | ForEach-Object {
 所有模式一起涨了约 6%，因为它们一起受同一个 SM 频率支配。**结论只由最后一行的比值
 承载**，绝对值只是当时的频率乘一个常数。这就是为什么 `README.md` 和 `tools/verify-unlock.ps1`
 都用比值判定 —— 拿绝对值判会把「降频」误读成「没解锁」，也会把「升频」误读成「解锁更强」。
+
+## 断电一夜之后再测：易失性的对照组
+
+`mma-stock-after-poweroff.txt` / `fp8-stock-after-poweroff.txt` 是 10/27 09:33 采的，
+机器断电一夜后**第一次上电**（boot 07:50:43），走的是正常 Windows Boot Manager，
+没有插 U 盘、没有跑解锁 EFI。它们的作用是给「断电真的清掉了吗」一个可核对的答案。
+
+| | 10/25 stock 基线 | 10/27 断电后 | `RUN0005` 解锁态 |
+|---|---:|---:|---:|
+| `f16/f16` | 175.6 | 182.3 | 175.1 |
+| `f16/f32` | 88.0 | **91.4** | **176.1** |
+| `bf16/f32` | 87.9 | **91.2** | **175.6** |
+| `s8/s32` | 352.5 | 363.6 | 348.0 |
+| `dp4a` | 87.0 | 90.0 | 87.7 |
+| `ffma` | 41.8 | 42.1 | 41.5 |
+| **`f16/f32 ÷ f16/f16`** | **0.501** | **0.501** | **1.006** |
+| `e4m3/f32` best | 170.63 | 181.93 | 319.58 |
+
+读法：
+- 绝对值这一列整体比 10/25 那次高约 4%（`f16/f16` 175.6 → 182.3），是频率差异，不是状态差异。
+- **比值一模一样**（0.501 对 0.501），而解锁态是 1.006。断电确实把 `SS0`/`SS1` 清回了冷启动值。
+- `e4m3` 也跟着在 181.93（stock 档）而不是 319 以上，与发射率口径一致。
+
+这条和 `README.md`「易失性」一节说的是同一件事，只是现在有文件可查了。
 
 ## 采集条件（`RUN0005` 那次开机，已补全）
 

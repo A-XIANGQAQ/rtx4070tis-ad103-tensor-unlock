@@ -1,0 +1,10 @@
+# NVIDIA GeForce RTX 4070 Ti SUPER, 66 SMs, sm_89, iters=20000 reps=5
+# 2026-10-27 09:33 +08:00, boot 07:50:43 (机器断电一夜后第一次上电)
+# 状态：stock —— 没有走 U 盘引导
+# 驱动 621.01 / VBIOS 95.03.45.40.c5 / power.limit 285 W
+# OS: Windows 11 专业工作站版 10.0.26300 Build 26300
+mode          best TF/s  median TF/s   runs
+e4m3/f32         181.93       173.72   172.0/173.7/169.2/174.7/181.9
+
+(instruction issue rate, not a GEMM; compare to mma_bench f16/f32,
+ not to the report's 59.3 TF/s CUTLASS number)
