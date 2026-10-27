@@ -206,7 +206,7 @@ DLSS on : 126.22 FPS  -> 126.48 FPS     +0.21%
 | CPU | AMD Ryzen 7 5700X3D（无核显） |
 | OS | Windows 11 专业工作站版 `10.0.26300` Build 26300，Secure Boot 关闭 |
 | PCI | `0000:08:00.0`，BAR0 `0xFB000000` (16 MiB)，BAR1 16 GiB（Re-BAR 开） |
-| 功耗 / 频率 | power limit 285 W（未改），`clocks.max.sm` 3165 MHz，PCIe Gen4 ×16 |
+| 功耗 / 频率 | 出厂 285 W，本文所有算力数字都在 285 W 下采集。之后给功率表挂了一份 320 W 的 VBIOS override（[PITFALLS #13](docs/PITFALLS.md)），当前跑在 320 W。`clocks.max.sm` 3165 MHz，PCIe Gen4 ×16 |
 
 ## 复现
 
