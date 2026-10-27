@@ -142,7 +142,7 @@ DLSS on : 126.22 FPS  -> 126.48 FPS     +0.21%
 1. **两组数据分开开机测。** 解锁在断电后就没了，所以 stock 那组必须先测、测完再解锁；
    或者先测解锁组、断电、再测 stock。两组之间只允许解锁这一项不同：同驱动、同 VBIOS、
    同分辨率、同测试项、同一张表。
-2. **每组开测前先记解锁状态。** 跑 `tools\verify-unlock.ps1 -RunNumber <最近那次>`，
+2. **每组开测前先记解锁状态。** 跑 `tools\verify-unlock.ps1`（不带 `-RunNumber`，它取最新那份日志），
    看 `f16/f32 / f16/f16` 这个比值：0.50 附近是 stock，1.00 附近是解锁。这个比值是
    自比的，所以不受绝对频率影响；但如果它落在两档中间，说明那一轮的频率不稳，重测。
 3. **跑测试的时候把结果存下来。** 3DMark 的 `Results` 目录
@@ -330,8 +330,8 @@ bench\build.cmd f16acc      # 为什么 float alpha 会毁掉 16F 累加的 GEMM
 
 # mma_bench / gemm_check 的源码在上游 diagnostics\bench\ 下，或用 -BenchDir 指到你现有的目录
 
-# 判据：比值，不看绝对值
-tools\verify-unlock.ps1 -RunNumber 5
+# 判据：比值，不看绝对值。不带 -RunNumber 就是最新那份日志
+tools\verify-unlock.ps1
 tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\gemm_check.exe'
 ```
 
@@ -346,7 +346,9 @@ MSVC 的 C4819（CUDA 头文件在 936 代码页下的无关警告），成功�
 
 `verify-unlock.ps1` 先读 `nvidia-smi` 的频率/功耗/降频原因，会明确告诉你这次采样的
 绝对值能不能用；然后算 `f16/f32 ÷ f16/f16` 这个「活比值」（stock ~0.50，解锁 1.00），
-判定就看它。对 `results/mma-baseline.txt` 的逐模式比值只作为表格上下文打印——那批基线是
+判定就看它。日志里没有 `Transaction result=` 时它会多说一句 `why:`，按日志自己的措辞
+分出五种情况：旧版 EFI（打 `wantSS1=`，没有 blank 闸门）、有闸门但仍拒（打 `stockSS1=`，
+选通器落到第三种状态）、19 个 pin 有一个不对、按了跳过键、以及认不出来的。对 `results/mma-baseline.txt` 的逐模式比值只作为表格上下文打印——那批基线是
 在 285 W 下采的，本机现在跑 320 W，跨日跨功耗的绝对值不可比；控制项一旦漂过 15%，
 脚本会单独提示「这是频率，不是门」。
 
@@ -354,8 +356,11 @@ MSVC 的 C4819（CUDA 头文件在 936 代码页下的无关警告），成功�
 可以直接拿它当 CI 判据：
 
 ```powershell
-tools\verify-unlock.ps1 -RunNumber 5; "exit=$LASTEXITCODE"
+tools\verify-unlock.ps1; "exit=$LASTEXITCODE"
 ```
+
+`-RunNumber` 只用来复查历史日志：`-RunNumber 5` 永远指着 `RUN0005`，那是没有 override
+时跑成功的一次。拿它验证新一轮会把旧结果当成新结果，所以别带这个参数。
 
 ## 关于本仓库的代码
 

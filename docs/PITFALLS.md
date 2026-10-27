@@ -578,9 +578,10 @@ if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!
 
 同时 `unlock_610.c` 主闸门的 `ss1!=1` 改成 `!(ss1==1 || (ss0==0 && ss1==0))`。
 
-**只放开这一条就够了**。主闸门剩下那五个合取项，在六份失败日志里已经被证明成立：
+**只放开这一条就够了** —— 主闸门剩下那五个合取项在六份失败日志里没有反证：
 `profile.c` 先过 19 个 pin、再读 SS0/SS1，日志里既然没有
-`cold-profile register mismatch`，说明那 19 个都是 stock 值，而主闸门比的正是其中五个：
+`cold-profile register mismatch`，说明那 19 个在 `Prepare()` 那一刻都是 stock 值，
+而主闸门比的正是其中五个：
 
 | 主闸门条件 | 来源寄存器 | `profile.c` 的 pin |
 |---|---|---|
@@ -592,8 +593,15 @@ if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!
 
 `inaccessible(ss0)` 对 `ss0=0` 也不成立（它只拒 `~0` 和 `0xbadf0000` 段）。
 
-所以 `ss1!=1` 是当时唯一挡住路的合取项，不是「第一道」。六份失败日志里既没有
-`register mismatch` 也没有 `config mismatch`，与此一致。
+这是**推断，不是证明**：那五个 pin 是在 `Prepare()` 里读的，主闸门在驱动放开 GPU
+之后又读了一次（`unlock_610.c` 里的 `read_bar` 调用），两次之间寄存器的值可以变。
+日志能证明的只有「`Prepare()` 那次它们是 stock 值」。剩下的靠两点旁证：六份失败
+日志既没有 `register mismatch` 也没有 `config mismatch`，而且 `RUN0005` 与 `RUN0006`
+两份成功日志的 184 行里只差 10 行，那五行 `entry:`/`selector read:` 之外的寄存器
+读数全部逐字相同 —— 说明 `Prepare()` 到主闸门之间这些东西没动过。
+
+所以 `ss1!=1` 是当时**最可能**挡住路的合取项。真要确认，得让那六次跑到主闸门并
+打印 `entry:` 行 —— 那六次连这一行都没有，因为它们在 `Prepare()` 就 `STOP` 了。
 
 能这么改是因为全链路本来就不写死 SS1 的值：
 

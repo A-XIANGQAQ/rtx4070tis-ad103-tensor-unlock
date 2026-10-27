@@ -214,6 +214,15 @@ STOP: stage=read-only-cold-profile status=0x8000000000000006 mutated=0 retained=
   `loader-payload.bin` 的 mtime 是 20:44，20:44 到 21:06 之间没有任何 load 日志；
   唯一的注册表快照是 23:21:37 取的，里面已经是 v2。所以「v1 能过、v2 不能过」
   只有时间顺序的旁证。
+- `RUN0005`（无 override 的成功那次）与 `RUN0006`（v1 override 的成功那次）逐行比过：
+  两份都是 184 行，`Compare-Object` 只有 **10 行** 不同，而且全部集中在五处 ——
+  冷启动 `SS0` 本身（`0x7300036` vs `0x27104036`）、两次 `Falcon DMA` 里 `src` 指向的
+  缓冲区地址（`0xb3a4d000`/`0xb3a5c700` vs `0xb390c000`/`0xb391b700`）、
+  `AD102 payload result` 与 `selector read` 里跟着变的 `ss0=`，其余 179 行包括
+  PROM、FWSEC 的十四行、五个 asset 的哈希、`mmu layout`、`residual edges`、
+  `PCI status drift` 全部逐字相同。**override 没有改变解锁走的任何一步**，
+  变的只有冷启动那一刻 `SS0` 的值 —— 这既解释了为什么 v1 那次能过，
+  也说明六次失败是 `SS0`/`SS1` 的值变了，不是代码路径变了。
 
 改法在解锁侧，`320 W` 那一侧一个字节都没动：入口接受两种状态，stock 是 `SS1==1`，
 blank 是 `SS0==0 && SS1==0`。改动落在
@@ -343,15 +352,20 @@ G:\workspace\rtx2705\bench\mma_bench.exe 20000 5
 比值 ≈ 1.00 = 解锁在；≈ 0.50 = 不在（stock）。别用绝对值判断：降频能把绝对值
 从 188 打到 88，看上去跟没解锁一模一样。
 
-想更省事：
+想更省事：不带 `-RunNumber` 直接跑，它取 `H:\AD104-UNLOCK` 里最新那份日志。
 
 ```powershell
-G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
+G:\workspace\repo-ad103\tools\verify-unlock.ps1
 ```
 
 它会先读 `nvidia-smi` 的频率/功耗/降频原因（不是 `0x1` 就打「本次绝对值不可用」），
 再算 `f16/f32 ÷ f16/f16` 这个活比值并据此判定；末节 `overall` 汇总四项，
-`exit 0` 表示全过、`exit 1` 表示有不过的。
+`exit 0` 表示全过、`exit 1` 表示有不过的。日志里没有 `Transaction result=` 时它会打一行
+`why:`，按日志措辞分出旧版 EFI / 有闸门但落到第三态 / pin 不符 / 跳过 / 认不出来。
+
+**不要按编号指定 `-RunNumber`。** 那个参数是用来复查历史日志的（`-RunNumber 5` 永远
+指着 `RUN0005`，一次已经成功的、没有 override 的旧跑），拿它验证新一轮会把旧结果
+当成新结果。跑 `RUN0013` 之后要的是最新那份，不传就行。
 
 真出现 `STOPPED. Power OFF fully; …` 说明门是软件拒的，硬件安全，**不用断电**：
 直接 Ctrl+Alt+Del 走 Windows Boot Manager 进去测。断电会清掉 `SS0`/`SS1`。

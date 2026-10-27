@@ -152,6 +152,23 @@ if (-not $run) {
         Write-Host "  no 'Transaction result=' line. Last 20 lines:" -ForegroundColor Yellow
         ($txt -split "`n" | Select-Object -Last 20) | ForEach-Object { "    $_" }
         Write-Host "  CRITERION 1: FAIL - the transaction never reported a result" -ForegroundColor Red
+
+        # Say which of the known shapes this is. "No result line" alone covers four
+        # very different causes, and only one of them is fixed by rebooting.
+        if ($txt -match 'cold-profile selector mismatch[^\n]*wantSS1=') {
+            Write-Host "  why: that EFI predates the blank gate (it prints wantSS1=). An EFI built" -ForegroundColor Yellow
+            Write-Host "       from cef0935 onward accepts SS0=0 SS1=0 and prints stockSS1= instead." -ForegroundColor Yellow
+        } elseif ($txt -match 'cold-profile selector mismatch[^\n]*stockSS1=') {
+            Write-Host "  why: this EFI has the blank gate and still refused -- the selectors were a" -ForegroundColor Yellow
+            Write-Host "       third state, neither stock (SS1==1) nor blank (SS0==SS1==0)." -ForegroundColor Yellow
+        } elseif ($txt -match 'cold-profile register mismatch') {
+            Write-Host "  why: one of the nineteen stock pins did not match, so the selector check" -ForegroundColor Yellow
+            Write-Host "       never ran. The card is not in the state this EFI was built for." -ForegroundColor Yellow
+        } elseif ($txt -match 'Operator skipped') {
+            Write-Host "  why: the U prompt was skipped, so nothing was attempted." -ForegroundColor Yellow
+        } else {
+            Write-Host "  why: no known entry refusal in the log -- see tools\classify-run.ps1 -All" -ForegroundColor Yellow
+        }
     }
     # The three historical failure shapes -- any of these means the run did not hand off.
     foreach ($k in 'graph missing', 'finish incomplete', 'GPU finish after close', 'STOP:') {
