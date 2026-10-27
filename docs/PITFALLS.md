@@ -4,7 +4,7 @@
 换到 **ASUS B550-I + 4070 Ti SUPER (AD103)** 后，preflight 九步里有五步会失败，
 `release` 三个 stage 全部失败。原因基本都是「上游那台机器只有一份，这张卡/这块板有两份」。
 
-下面按「症状 → 原因 → 改法」记，都是实测定位的，没有推测成分。
+下面按「症状 → 原因 → 改法」记，每一条都是实测定位的。
 
 ---
 
@@ -115,8 +115,8 @@ ACPI根 -> PCI(fn=2, dev=1) -> PCI(fn=0, dev=0)
 ACPI根 -> PCI(fn=1, dev=8) -> PCI(fn=3, dev=0)
 ```
 
-更硬的问题是 `UsbBaseline()` 里有 `if(Plan.usb_host)return EFI_UNSUPPORTED;` ——
-**只允许存在一个 xHCI 控制器**。这块板有两个，必然在找到第二个时失败。
+更硬的问题是 `UsbBaseline()` 里有 `if(Plan.usb_host)return EFI_UNSUPPORTED;`，
+只允许存在一个 xHCI 控制器。这块板有两个，必然在找到第二个时失败。
 
 **改法**：这两处本质是「USB 拓扑基线」，和解锁事务无关。改成记录不断言：
 
@@ -167,7 +167,7 @@ GPU driver detach return: stage=3 status=0
 STOP: stage=MSI-release status=0x8000000000000006
 ```
 
-detach 成功但立刻失败，且 detach 之后没有 `Gops:` 日志 —— 说明断在
+detach 成功但立刻失败，且 detach 之后没有 `Gops:` 日志，说明断在
 `Snapshot` / `Expected` / `Alive` 之间。
 
 **原因**：`DisconnectController(Plan.pci, Plan.nv_agent, NULL)` 会**级联**断开子设备。
@@ -189,7 +189,7 @@ static BOOLEAN Removed(const EDGE *e, UINTN stage) {
 离线用 capture 里的 179 条边验证过：stage 3 之后 `PCI handle` 剩 0 条，
 `console handle` 保留 2 条，正好是 `Expected(3,FALSE)` 需要的状态。
 
-### 6b. 上面这个改法**不够** —— 级联会先把 device path 摘掉
+### 6b. 上面这个改法不够：级联会先把 device path 摘掉
 
 **症状**：`Expected(3,FALSE)` 仍然失败，失败的边指向 GOP handle：
 
@@ -199,9 +199,9 @@ GPU graph missing: handle=0xc6b2bb18 agent=0xc8684918 controller=0xc6b2bb18
 ```
 
 `0x387477c2` 是 Simple Text Output 的 GUID，`handle` 就是日志里打印的 `gop`。
-那条边**正是 stage 3 按计划拆掉的**，却被判成"意外消失"。
+那条边**正是 stage 3 按计划拆掉的**，却被判成「意外消失」。
 
-**原因**：`GpuChild()` 是靠 device path 认身份的 ——
+**原因**：`GpuChild()` 靠 device path 认身份：
 `HandleProtocol(h, &DevicePathGuid)` 拿到路径，再比 24 字节 PCI 前缀。
 但 `DisconnectController` 会**先卸载 console/GOP 驱动**，unbind 时把 device path
 协议从这些 handle 上摘掉，级联释放 handle 是之后的事。所以在
@@ -344,12 +344,12 @@ failed:
 配套把 `Expected()` / `attrs` / `supported` 这些图相等性检查降级成日志。它们原本是
 「证明固件行为符合预期」的断言，在移植阶段会挡住真正的进度。
 
-### 10b. 光「不 halt」还不够 —— halt 的时候没人看得见
+### 10b. 光「不 halt」还不够：halt 的时候没人看得见
 
-**症状**：屏幕停在一帧，不滚动、不提示，操作者据此判断"卡死"，按重启键。
+**症状**：屏幕停在一帧，不滚动、不提示，操作者据此判断「卡死」，按重启键。
 
 **原因**：`app.c` 在启动事务前调用 `GuBootSilence()`，因为接下来要把显示驱动
-卸掉，控制台随时会消失。这个选择是对的。问题是**它没有对应的「恢复」**——
+卸掉，控制台随时会消失。这个选择是对的。问题是它没有对应的「恢复」：
 `GuBootHalt()` 里那句 `STOPPED.` 走的是 `GuBootSay()`，而 `GuBootSay()` 在
 `Silent` 为真时直接 return：
 
@@ -360,9 +360,8 @@ VOID GuBootSay(const CHAR16 *text) {
 }
 ```
 
-于是最需要告知的那一刻，恰好是最安静的那一刻。**看不清的停机和死机在操作者眼里
-没有区别，而处理死机的习惯动作是重启** —— 重启会清掉易失的 `SS0`/`SS1`，
-把已经成功的解锁送掉。
+于是最需要告知的那一刻，恰好是最安静的那一刻。看不清的停机和死机在操作者眼里没有
+区别，而处理死机的习惯动作是重启，重启会清掉易失的 `SS0`/`SS1`，把已经成功的解锁送掉。
 
 **改法**：所有终止路径第一步先撤销静默。
 
@@ -385,14 +384,14 @@ VOID GuBootHalt(VOID) {
 
 **症状**：日志最后一行是 `TRANSACTION OK`，后面没有任何解释，`fault=1`。
 
-**原因**：旧 `GuLog()` 把"日志已经关了"当成故障：
+**原因**：旧 `GuLog()` 把「日志已经关了」当成故障：
 
 ```c
 if(n==(size_t)-1||n>=sizeof(buffer)||!Log){Gu.fault=TRUE;return;}
 ```
 
-而 `app.c` 里所有 `Gu.fault` 检查都排在 `GuBootClose()` 之后 ——
-**主动关日志这个正常动作，会污染之后每一个 gate**。典型顺序：
+而 `app.c` 里所有 `Gu.fault` 检查都排在 `GuBootClose()` 之后。
+主动关日志这个正常动作，因此会污染之后每一个 gate。典型顺序：
 
 ```c
 GuLog("TRANSACTION OK: …");
@@ -416,9 +415,9 @@ EFI_STATUS GuBootClose(VOID) {
 }
 ```
 
-失败信息进不了日志的时候，就把它打到屏幕上 —— 也就是 10b 的 `GuBootWake()`。
+失败信息进不了日志的时候，就把它打到屏幕上，也就是 10b 的 `GuBootWake()`。
 
-顺带把最后那道门挪到关日志**之前**：
+最后那道门也挪到了关日志之前：
 
 ```c
 /* 之前：先关日志再检查 → 拒绝的理由写不进日志，日志停在 OK 上 */
@@ -428,8 +427,8 @@ GuLog("TRANSACTION OK: … handoff check passed …\n");
 stage="close-USB-log";s=GuBootClose();if(s!=EFI_SUCCESS||Gu.fault)goto failed;
 ```
 
-**诊断原则**：一条 `OK` 后面什么都没有，不是"成功之后正常结束"，
-是"失败发生在没有任何人能看到的地方"。
+**诊断原则**：一条 `OK` 后面什么都没有，不是成功之后正常结束，
+而是失败发生在没有任何人能看到的地方。
 
 **已在本机验证**（`RUN0005`）：末行变为
 `TRANSACTION OK: … handoff check passed; benchmark still required`，
@@ -441,7 +440,7 @@ stage="close-USB-log";s=GuBootClose();if(s!=EFI_SUCCESS||Gu.fault)goto failed;
 
 **原因**：`boot_io.c` 里的格式化器是受限实现，只认 `%s %u %x %X`（含 `z`/`ll`/
 `#`/宽度）。`%p` 走到 `GuFormatV()` 的 default 分支返回 -1，`GuLog` 据此
-`Gu.fault=TRUE` 后返回 —— 于是**从那一行开始，每一行日志都被丢掉**。
+`Gu.fault=TRUE` 后返回，于是从那一行开始，每一行日志都被丢掉。
 
 **改法**：指针一律 `%#llx` + `(unsigned long long)(UINTN)`：
 
@@ -452,8 +451,7 @@ GuLog("gop=%#llx\n", (unsigned long long)(UINTN)Plan.gop);
 同一族的坑：`GuLog` 内部缓冲区固定大小，格式化结果超长（`n>=sizeof(buffer)`）
 同样置 fault 并丢弃。写长行之前先算一下。
 
-**诊断原则**：日志"自然地"停在某一行时，先怀疑那一行本身，不要先怀疑它后面
-的逻辑没跑。
+**诊断原则**：日志自然地停在某一行时，先怀疑那一行本身，不要先怀疑它后面的逻辑没跑。
 
 ---
 
@@ -478,8 +476,8 @@ nvidia-smi --query-compute-apps=pid,process_name
 换成别的 `computeType` 就正常。
 
 **原因**：`cublasGemmEx` 的 `alpha`/`beta` 是 `const void *`，cuBLAS 按
-**`computeType` 的宽度**去读，不是按你传的变量类型。传 `float 1.0f`、同时把
-`computeType` 设成 `CUBLAS_COMPUTE_16F` 时，cuBLAS 只取低两字节 —— `1.0f` 的
+`computeType` 的宽度去读，不是按你传的变量类型。传 `float 1.0f`、同时把
+`computeType` 设成 `CUBLAS_COMPUTE_16F` 时，cuBLAS 只取低两字节，而 `1.0f` 的
 低两字节恰好是 `0x0000`，于是 `alpha` 被读成 `__half 0.0`。结果每个输出元素都是
 `0*A*B + 0*C = 0`，**矩阵全零**，kernel 的实际工作量塌掉，计时器被自己的 bug 缩短。
 
@@ -501,7 +499,7 @@ const void *pa=&fAlpha, *pb=&fBeta;
 if(c.comp==CUBLAS_COMPUTE_16F){ pa=&hAlpha; pb=&hBeta; }
 ```
 
-并且**每个用例都验证输出非零** —— 一次不计时的 GEMM + `count_nz`：
+并且每个用例都验证输出非零：一次不计时的 GEMM 加 `count_nz`，
 
 ```cuda
 template<typename T> __global__ void count_nz(const T *p,long n,int *out){
@@ -510,8 +508,8 @@ template<typename T> __global__ void count_nz(const T *p,long n,int *out){
 }
 ```
 
-全零时打出 `<-- BROKEN`。**这条闸门是必须的**：如果没有它，这个 bug 只会表现为
-"数字好得不像话"，很容易被当成解锁效果写进结论。
+全零时打出 `<-- BROKEN`。这条闸门是必须的：没有它，这个 bug 只会表现为
+「数字好得不像话」，很容易被当成解锁效果写进结论。
 
 **教训**：性能数字超出物理峰值时，先查是不是活儿根本没干，再查是不是跑得真快。
 `results/cublas-contaminated.txt` 之外的旧 cuBLAS 采样（`fp16/fp16acc` 4588/4744）

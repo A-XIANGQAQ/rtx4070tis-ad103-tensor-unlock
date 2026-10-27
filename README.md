@@ -27,13 +27,13 @@
 和它同属寄存器空转的指令发射率探针，但 `e4m3` 用的是 `mma.m16n8k32.e4m3.e4m3.f32`
 （`bench/fp8_mma_bench.cu`），单指令 FLOP 数凑成一样是为了可比。**它是发射率，不是 GEMM。**
 上游对同一张卡跑过 matched E4M3 CUTLASS GEMM（`m=n=k=4096`，240 W 帽，同一 profiler
-二进制），结果是 **59,325.8 → 59,495 GFLOP/s，1.0029×（0.3%）** ——
+二进制），结果是 **59,325.8 → 59,495 GFLOP/s，即 1.0029×（0.3%）**，
 见 `gpu-unlock-ada/docs/ada-2705-report.md:95-107`，作者自己写明「no meaningful FP8 gain」。
 两条并不矛盾：发射率翻倍说明**这条指令路径的权限位确实开了**，而那个特定 GEMM 在
 240 W 下是别的瓶颈（带宽/占用率/power）。**所以别把 1.87–2.19× 当成「FP8 推理会快一倍」。**
 
-下面是另一个仪器：真正的 cuBLAS GEMM（N=8192，含 alpha 宽度校验）。这四行**没有 stock
-对照**，只有解锁后的绝对值。
+另外四行来自真正的 cuBLAS GEMM（N=8192，含 alpha 宽度校验）。它们没有 stock 对照，
+只有解锁后的绝对值。
 
 | 模式 | 解锁后 |
 |---|---:|
@@ -46,13 +46,13 @@
 = 79935 个 cell，两个模式合计 **159870 个**，全部 `failures=0`, `max_abs=0`。
 
 **判据只用比值，不用绝对值。** 同一个 boot 里再测一遍，所有模式整体涨了 6%
-（`f16/f16` 175.1→188.0，`f16/f32` 176.1→188.1），而它们的比值从 1.006 变成 1.001 ——
+（`f16/f16` 175.1→188.0，`f16/f32` 176.1→188.1），而它们的比值从 1.006 变成 1.001：
 变的只有 SM 频率，机制没变。降频更严重时会等比缩，绝对值可以掉到和 stock 一样：
 `f16/f32` 一旦落到 88 附近，光看数字根本分不出「没解锁」还是「解锁了但被降频」，
 那时只有比值能判。这一条我们没能留下采集文件（当时 GPU 被别的负载占着，只顾着看数字
 没存盘），就当提醒记着，不要当数据引用。
 
-所以判据是 `f16/f32 ÷ f16/f16`：**stock ≈ 0.50，解锁 = 1.00**。这个比值乘掉了频率，
+所以判据是 `f16/f32 ÷ f16/f16`：**stock ≈ 0.50，解锁 = 1.00**。这个比值把频率约掉了，
 是唯一跨机器、跨频点可比的东西。两次采样的完整对照在
 [results/README.md](results/README.md)。
 
@@ -76,7 +76,7 @@
 ```
 
 `readout1`（`FEAT_READOUT_1`，`0x00823818`）是**九个 3-bit 字段**，掩码 `0x07ffffff`
-（27 bit）——见 `windows/ad103-2705/vendor/unlock_610.c:33`。stock 时
+（27 bit），见 `windows/ad103-2705/vendor/unlock_610.c:33`。stock 时
 `fields=0 0 2 0 0 2 0 2 0`（其中三个字段是 2 = 1/4 速率），解锁后九项全 0，
 `full` 由 `valid && !(value & 0x07ffffff)` 算出（`vendor/unlock_610.c:391`）。
 
@@ -84,7 +84,7 @@
 `rtx4090-register-report.md:272-278` 明说「The mapping of those three reduced fields to
 the named FMLA/IMLA fuse words is not established」，我们也没有独立证据。
 `FMLA32=1→0`、`IMLA2=1→0`、`IMLA4=1→0` 那张表来自 NVIDIA RM getter 的另一条读法
-（`docs/evidence/ada2705/sm-rates.json`），不是从 `readout1` 解出来的 —— 两者能对上，
+（`docs/evidence/ada2705/sm-rates.json`），不是从 `readout1` 解出来的。两者能对上，
 但只能当**同一个事实的两种视图**，不能互相推导。
 
 `SS0` 的 stock 值**不是常量**。逐次冷启动实测（各 `RUN` 的 `entry:` 行）：
@@ -106,9 +106,9 @@ stayed clear; its meaning is unverified」。只读探针 `CAP0002.JSON`（本�
 
 ## DLSS 超分与帧生成：本次解锁对它们没有可测量的收益
 
-**这一节分两层，两层的确信度不一样，别混着读。** 机制那层（下面的表 + 两条推论）由
-本仓库的 tensor 实测直接支撑；帧率那层只有四位数、没有留下采集文件，只能算「当时记
-下来的」。两层的区别下面会逐处标出。
+这一节里机制和帧率两部分的证据强度不同。机制部分（下面的表 + 两条推论）由本仓库的
+tensor 实测直接支撑；帧率部分只有四位数，没有留下采集文件，只能算「当时记下来的」。
+两层的区别在下面逐处标出。
 
 | 路径 | 用什么硬件 | 受这次解锁影响吗 |
 |---|---|---|
@@ -126,15 +126,15 @@ DLSS on : 126.22 FPS  -> 126.48 FPS
 如果这四位数可信，那差 0.09% 和 0.21% 都在噪声内。但见下一条。
 
 > **这组帧率的采集文件没有留下来。** 本机现在没装 3DMark，也没有任何
-> `.3dmark-result`，所以这四位数无法复核 —— 它和我另外几处编造的哈希属于同一类：
+> `.3dmark-result`，所以这四位数无法复核。它和我另外几处编造的哈希属于同一类：
 > 写进文档的时候没有留下可核对的原始产物。下面的机制部分不依赖它（那部分由
 > `f16/f16` 解锁前后同速直接支撑），但这四位数本身只能算「当时记下来的」，
 > 不算证据。重测方法见本节末。
 
-原因不是解锁没生效，而是：
+解锁本身是生效的，只是收益落不到这两条路径上，原因有两条：
 
-- `f16/f16` 在解锁前后都是 ~176–188 TF/s —— 那已经是 sm_89 的 FP16 tensor 物理峰值
-  （解锁后 `f16/f16` 与 `f16/f32` 相等，说明两条路径同速，没有余量了），
+- `f16/f16` 在解锁前后都是 ~176–188 TF/s，那已经是 sm_89 的 FP16 tensor 物理峰值
+  （解锁后 `f16/f16` 与 `f16/f32` 相等，两条路径同速，没有余量了），
   而 DLSS 超分走的是 FP16 累加那条。
 - 帧生成用 OFA，完全不碰 tensor core。
 
@@ -142,23 +142,22 @@ DLSS on : 126.22 FPS  -> 126.48 FPS
 算力；FP16-累加和 INT8 本来就满速，帧生成走的是独立单元。这两条都有本仓库的实测支撑
 （`f16/f16` 与 `s8/s32` 解锁前后不动），跟上面那组帧率数字无关。
 
-顺带说清「强开 40 系 DLSS 5」这件事，因为它和本仓库的机制经常被混为一谈。
-本仓库能验证的只有一件事：**FP32-累加 tensor 路径的权限位打开之后，那三条路径的
-指令发射率翻倍，而 FP16-累加路径本来就是满速。** 至于 DLSS 的某个版本是否走 FP8、
-走哪条 tensor 路径、要不要额外的模型文件 —— 那属于另一件事，本仓库没有测过，
-不做断言。
+「强开 40 系 DLSS 5」和本仓库的机制经常被混为一谈。本仓库能验证的只有一件事：
+**FP32-累加 tensor 路径的权限位打开之后，那三条路径的指令发射率翻倍，而 FP16-累加
+路径本来就是满速。** 至于 DLSS 的某个版本是否走 FP8、走哪条 tensor 路径、要不要额外
+的模型文件，那属于另一件事，本仓库没有测过，不做断言。
 
 能确定的是这两条推论：
 
-1. DLSS 超分如果走 FP16-累加，它拿不到收益 —— `f16/f16` 解锁前后都等于 `f16/f32`，
+1. DLSS 超分如果走 FP16-累加，它拿不到收益：`f16/f16` 解锁前后都等于 `f16/f32`，
    即已到 sm_89 的物理峰值。这一条**不依赖**上面那组帧率。
 2. 任何声称「解锁后 DLSS / 帧生成变快」的说法，需要给出**在同一个 boot、同一张卡、
    同一场景、空闲 GPU** 下解锁前后成对的帧率数字。本仓库给的是
-   `33.72 → 33.75`（+0.09%）和 `126.22 → 126.48`（+0.21%）—— **属于「记下来的」那一层，
+   `33.72 → 33.75`（+0.09%）和 `126.22 → 126.48`（+0.21%），**属于「记下来的」那一层，
    不是证据**。真要拿这条判 DLSS，得自己按本节末的方法重测。
 
-**会变快的地方**（本仓库实测）：任何 **FP32 累加**的 tensor 路径 —— `f16/f32`、`bf16/f32`
-各 2.00×，`e4m3/f32` 的**指令发射率** 1.87–2.19×。最后这个要注意口径：它是发射率不是
+会变快的地方（本仓库实测）：任何 FP32 累加的 tensor 路径。`f16/f32`、`bf16/f32`
+各 2.00×，`e4m3/f32` 的指令发射率 1.87–2.19×。最后这个要注意口径：它是发射率不是
 GEMM，上游那张卡上真实的 FP8 GEMM 只有 0.3%（见上面 ※ 那条）。FP8 推理实际能快多少，
 取决于你的 kernel 卡在哪一环，本仓库没测。
 
@@ -194,8 +193,8 @@ Windows。开完机就可以拔掉 U 盘。
 
 不做自动化的原因：接管 ESP 的 `bootmgfw.efi` 或改 BCD 都能省掉按键，但那会让每次
 开机多 40 秒，并且把不安全因素塞进启动关键路径。对一个易失的、可选的性能调整来说，
-不值得。工具里的 `install-esp.ps1` 保留但默认不推荐 —— 它在这台机器上**装上去就进不了
-系统**，详见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
+不值得。工具里的 `install-esp.ps1` 保留但默认不推荐：它在这台机器上装上去就进不了
+系统，详见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
 
 普通重启（不断电）不会清掉；只有真正断电才需要重来。两头都有实测：
 
@@ -213,7 +212,7 @@ Windows。开完机就可以拔掉 U 盘。
 - U 盘版如果链到 `bootmgfw.efi`，从 U 盘启动会链到 ESP 上那个自己，再链回自己
 
 换版本时两个一起换。U 盘上没有 `AD104-UNLOCK\AUTO.TXT` 就保持手动按 `U`，
-有的话会跳过按键 —— 想要手动就把这个文件删掉。
+有的话会跳过按键；想要手动就把这个文件删掉。
 
 ## 硬件
 
@@ -230,7 +229,7 @@ Windows。开完机就可以拔掉 U 盘。
 
 ## 复现
 
-两条硬约束先看：
+两条硬约束：
 
 1. **firmware asset 必须从你自己的 VBIOS 生成。** `booter_load_ad102.bin`、
    `v67-…-four-plm.bin`、GSP 镜像都是从 VBIOS 里解出来的，不同 VBIOS 的 FWSEC
@@ -295,7 +294,7 @@ tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\
 `results/` 里是原始 benchmark 输出，`SHA256SUMS` 可复核（在 `results/` 下
 `sha256sum -c SHA256SUMS`，或 PowerShell 逐行比对）。里面有两份「反面教材」：
 
-- `cublas-contaminated.txt` — 后台有游戏占 GPU 时跑的。峰值仍是 180，但后续 rep 塌到 2.0。
+- `cublas-contaminated.txt`：后台有游戏占 GPU 时跑的。峰值仍是 180，但后续 rep 塌到 2.0。
   说明测量必须在空闲 GPU 上做（[docs/PITFALLS.md](docs/PITFALLS.md) #11）。
 - `cublas-unlocked-run0005.txt` 之前的旧 cuBLAS 采样里出现过 `fp16/fp16acc` 4588 / 4744 TF/s，
   那是**我自己的探针 bug**：cuBLAS 按 `computeType` 的宽度读 `alpha`，
@@ -304,15 +303,15 @@ tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\
 
 ## 致谢
 
-- [`JustAResearcher/gpu-unlock-ada`](https://github.com/JustAResearcher/gpu-unlock-ada)
-  — 本移植的上游，MSI AD104 Windows UEFI 端口的原作者
-- [`impacifist/Windows-GPU-UNLOCK`](https://github.com/impacifist/Windows-GPU-UNLOCK)
-  — 上游的 snapshot/delta 策略来源。**它在本移植做不到的两点上更成熟**：
+- [`JustAResearcher/gpu-unlock-ada`](https://github.com/JustAResearcher/gpu-unlock-ada)：
+  本移植的上游，MSI AD104 Windows UEFI 端口的原作者
+- [`impacifist/Windows-GPU-UNLOCK`](https://github.com/impacifist/Windows-GPU-UNLOCK)：
+  上游的 snapshot/delta 策略来源。它在本移植做不到的两点上更成熟：
   多个显示子节点的显式枚举（v0.3.1 处理到 4 个），以及没有第二显示 GPU 时的
   `GU_CONSOLE_AGGREGATE` 拓扑。差距记在 [docs/PRIOR-ART.md](docs/PRIOR-ART.md)
-- [`unitypit71/rtx4070tisuper-tensor-unlock`](https://github.com/unitypit71/rtx4070tisuper-tensor-unlock)
-  — 同型号的 Linux 侧完整案例，FWSEC/SEC2 流程的交叉参考
-- [`Zagitta/gpu-unlock`](https://github.com/Zagitta/gpu-unlock) — 机制的最初实现
+- [`unitypit71/rtx4070tisuper-tensor-unlock`](https://github.com/unitypit71/rtx4070tisuper-tensor-unlock)：
+  同型号的 Linux 侧完整案例，FWSEC/SEC2 流程的交叉参考
+- [`Zagitta/gpu-unlock`](https://github.com/Zagitta/gpu-unlock)：机制的最初实现
 
 ## 状态：U 盘手动引导路线已验证成功（2026-10-27 更新）
 

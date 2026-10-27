@@ -104,7 +104,7 @@ AD103（4080 / 4080 SUPER）的只读 preflight。没细读。同芯片家族，
 > two validated `DriverBindingHandle`s is permitted. **The NVIDIA GPU owner and shared AMI
 > runtime EDID/input driver are never stopped.**
 
-对应的循环是 `for(UINTN stage=1;stage<=2;stage++)` —— TextOut、GOP，两个。
+对应的循环是 `for(UINTN stage=1;stage<=2;stage++)`，即 TextOut、GOP 两个。
 
 `gpu-unlock-ada` 的 `windows/ad104-msi` 改成了 3 个 stage，第三个断开 `Plan.nv_agent`
 （GPU 的 PciIo owner），然后靠 `ClaimRestore()` 重新拿独占。
@@ -127,7 +127,7 @@ AD103（4080 / 4080 SUPER）的只读 preflight。没细读。同芯片家族，
 ```
 
 两种拓扑都要求释放后**零物理 GOP**。这台机器的 GOP 有真实 framebuffer
-（`fb=0x7800000000 fbsz=0x1900000`），且释放后 `Gops()` 在 stage<3 时仍枚举到 1 个 ——
+（`fb=0x7800000000 fbsz=0x1900000`），且释放后 `Gops()` 在 stage<3 时仍枚举到 1 个，
 所以既不是 aggregate，也不是它那两个 profile 的 headless 形态。
 
 **它是第三种形态：单个正常 GOP + ConSplitter 保留。** 本移植的「放宽 `text`/`virtual`
@@ -146,8 +146,8 @@ if(e->handle==Gu.handle)return FALSE; /* No driver/child may remain on GPU. */
 for(i...) { if(Removed(&Original.edges[i],stage))continue; ... }
 ```
 
-`Removed()` 为真的边被直接跳过 —— 它只证明「不该消失的边还在」，**从不证明「该消失的
-边确实消失了」**。stage 3 级联断开后如果 GPU handle 上残留一条 EDID 边，`Expected(3,TRUE)`
+`Removed()` 为真的边被直接跳过：它只证明「不该消失的边还在」，从不证明「该消失的
+边确实消失了」。stage 3 级联断开后如果 GPU handle 上残留一条 EDID 边，`Expected(3,TRUE)`
 照样返回真。
 
 已在 `GuMsiReleased()` 里加了一条只记录不阻断的计数：
@@ -173,10 +173,10 @@ GuLog("release: residual edges on GPU handles=%zu expected=0\n",(size_t)residual
   开启），并给出 matched 性能表。对本移植最有参考价值的一点：它把 FP8 E4M3 GEMM 也纳入了测量
   （199.4 → 310.4 TF/s 与 199.4 → 298.7，两次），但作者自己注明 FP8 波动大、**不用于**判定。
 - [miounet11/gpu-unlock-site](https://github.com/miounet11/gpu-unlock-site)：gpu-unlock.com
-  文档站（Ampere/Ada/Turing，7 语言），适合作为"给别人的入口页"而不是代码参考。
+  文档站（Ampere/Ada/Turing，7 语言），适合作为给别人的入口页，而不是代码参考。
 
-顺带一条方法论：本仓库与上游现在都用 `mma.m16n8k32` e4m3 的寄存器探针量 FP8 发射率，
-与 GEMM 数字不可混比。三处实测放在一起看就清楚了：
+方法论上还有一条：本仓库与上游现在都用 `mma.m16n8k32` e4m3 的寄存器探针量 FP8 发射率，
+与 GEMM 数字不可混比。三处实测放在一起看就清楚：
 
 | 仪器 | 数据 | 倍数 |
 |---|---|---|
@@ -188,5 +188,5 @@ GuLog("release: residual edges on GPU handles=%zu expected=0\n",(size_t)residual
 占用率全拿掉了，看到的是纯上限；GEMM 要真读 A/B、写 C，240 W 帽下先撞功率墙（上游那次
 更是撞到 0.3%，说明那个 kernel 在这个形状与功耗下 FP8 通路压根不是瓶颈）。
 
-**所以「FP8 快 N 倍」这句话不成立** —— 得说清是哪个仪器、什么形状、什么功耗帽。本仓库
+**所以「FP8 快 N 倍」这句话不成立**，得说清是哪个仪器、什么形状、什么功耗帽。本仓库
 只提供第一行，不作为对任何真实 FP8 工作负载的预测。
