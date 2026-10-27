@@ -177,8 +177,50 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 的六个静默出口加了屏显。但这个改动从未在 ESP 路径上重测过，是假设，不是结论。
 
 注：这台机器的 ESP 是 disk 3 分区 1，300 MB。`Inspect()` 的多盘容忍和上面三个
-bug 的修复在同一个 EFI 里，部署在 `H:\EFI\BOOT\BOOTX64.EFI`（104448 B，
-`76fee036…`）。走 U 盘这一路不需要它；只有回头试 ESP 时才用得上。
+bug 的修复在同一个 EFI 里。`H:\EFI\BOOT\BOOTX64.EFI` 现在是 104960 B /
+`ee440d7f…`（含 blank 入口态那处改动），上一版 104448 B / `76fee036…`
+留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；只有回头试 ESP 时才用得上。
+
+## 320 W VBIOS override 与 SM 解锁的冲突（改在解锁侧，未上硬件）
+
+用 `vbios-loader.exe` 载入改过功率表的 VBIOS 之后，六次冷启动（`RUN0007`–`RUN0012`）
+全部停在同一个地方，六份日志 sha256 逐字节相同（`8F61DB14…`），只有三行：
+
+```
+AD104 MSI EXPERIMENTAL v0.5.4: hardware unvalidated; ...
+cold-profile selector mismatch: SS0=0 SS1=0 wantSS1=0x1
+STOP: stage=read-only-cold-profile status=0x8000000000000006 mutated=0 retained=0 fault=0
+```
+
+几点实测结论：
+
+- `cold-profile selector mismatch` 是 19 个 pin **全匹配之后**才打的；`fault=0`。
+  所以 `0` 是真读出来的值，不是读失败的兜底。
+- 四个 payload 加原厂 ROM 逐字节比过：`0xBF89` 是 `power_default_w`、`0xBF8D` 是
+  `power_max_w`（u32，mW）；`v2` 与 `v1` 只差 3 字节。四个镜像里搜
+  `0x0082381c` / `0x00823820` / `0x00823804` / `0x27304036` / `0x00410080` /
+  `0x00000233` 全部 0 命中 —— **override 里没有 SM 寄存器初值**。冲突不在覆盖，
+  在初始化路径。
+- `RUN0006` 是反证：同一套 override（`v1`）下那次读到 `ss0=0x27104036 ss1=0x1`，
+  事务一路跑通。所以不是「一挂 override 就必然为 0」。
+
+改法在解锁侧，`320 W` 那一侧一个字节都没动：入口接受两种状态，stock 是 `SS1==1`，
+blank 是 `SS0==0 && SS1==0`。改动落在
+
+- `profile.c` 的 `Registers()`
+- `vendor/unlock_610.c` 的主闸门
+
+全链路本来就不写死 `SS1` 的值，所以 blank 态 latch 之后能自洽：`GuEntrySelectorsMatch`
+比的是 `Ss1==EntrySs1`（不是 `==1`）、`GuLatchEntrySelectors` 的上界是 `Ss1>0xfU`、
+`GuSelectorPhase` 比的是 `ss1==entry1`、`check_entry_selectors` 比的是
+`b!=work->ss1_entry`，pre/post-FLR 要求的是写入后的目标值 `0x88888888`/`0x8`，与入口态无关。
+
+验证方式是 `test_efi_transaction`：30 个场景 × 4 组 permutation（3 个 stock 变体 +
+1 个 blank），共 120 条 `EFI integration` 行，`TEST_EXIT=0`。数条数而不是看日志文本 ——
+成功的 permutation 是静默的。
+
+**这一步只在离线仿真里过了，没有上硬件。** 真机上要冷启动一次才知道 blank 态到底
+能不能走完事务。
 
 ## 开机后怎么确认（照这个做）
 
@@ -229,9 +271,9 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
 
 - `windows/ad103-2705` 分支：`https://github.com/A-XIANGQAQ/gpu-unlock-ada/tree/ad103-2705/windows/ad103-2705`
   基于上游 `4e7fefc`；三个 bug 的修复在 `cb3691b`，之后 `c794f3e` 只改文档
-- 本仓库 `docs/PITFALLS.md`：11 个移植阻塞点 + 4 个「拆完之后还要验证」的坑
-  （6b 身份要缓存、10b 停机要可见、10c 关日志≠故障、10d `%p` 会静默整份日志），
-  外加 #12 cuBLAS alpha 宽度，每条「症状 → 原因 → 改法」
+- 本仓库 `docs/PITFALLS.md`：13 条，每条「症状 → 原因 → 改法」。移植阻塞点之外
+  还有 4 个「拆完之后还要验证」的坑（6b 身份要缓存、10b 停机要可见、10c 关日志≠故障、
+  10d `%p` 会静默整份日志）、#12 cuBLAS alpha 宽度、#13 override 让 SS0/SS1 读 0
 - 本仓库 `docs/PRIOR-ART.md`：邻域实现对比，含本移植做错的两处
 - `bench/`：四个 benchmark 源（`mma_bench` 在上游 `diagnostics/bench/` 下），
   口径与 `results/` 一致

@@ -510,3 +510,92 @@ template<typename T> __global__ void count_nz(const T *p,long n,int *out){
 
 旧 cuBLAS 采样（`fp16/fp16acc` 4588/4744，`results/cublas-contaminated.txt` 之外）
 就是被这个 bug 污染的数据，已重采。
+
+## 13. 加载 VBIOS override 之后，SS0/SS1 读到 0，闸门把整条路拒掉
+
+改功率上限用的是注册表 override（`vbios` 二进制 + `EnableGpuFirmware`），不刷 flash。
+装好之后六次冷启动全都停在 `read-only-cold-profile`，日志只有三行、字节完全相同：
+
+```
+AD104 MSI EXPERIMENTAL v0.5.4: ...
+cold-profile selector mismatch: SS0=0 SS1=0 wantSS1=0x1
+STOP: stage=read-only-cold-profile status=0x8000000000000006 mutated=0 retained=0 fault=0
+```
+
+六份日志 sha256 都是 `8F61DB14...`，跨 3 小时、跨两种 payload，逐字节相同。
+
+**这两行说明的事，比它看起来多。**
+
+`cold-profile selector mismatch` 是在 `profile.c` 里 19 个 pin **全部匹配之后**
+才打印的。如果 pin 有任何一个不符，日志会是
+`cold-profile register mismatch: idx=.. off=.. got=.. want=..`。
+所以「读到 0」不是身份认错了，是这块卡在这个状态下 `0x82381c` / `0x823820`
+真的返回 0，19 个其它寄存器仍是 stock 值。
+
+`fault=0` 也值得注意：`GuRead32` 读失败会置 `Gu.fault`，而
+`profile.c` 的循环里每个 pin 后都查 fault。fault 一直是 0，说明读操作本身成功，
+0 是被读出来的值。
+
+**根因不是「override 覆盖了 SS0」**。逐字节比对四个 payload 和原厂 ROM：
+
+- `power_default_w` 在窗口 `0xBF89`，`power_max_w` 在 `0xBF8D`，单位 mW
+- v2（default 320 / max 320）与 v1（default 285 / max 320）只差 **3 字节**：
+  `0xBF89 4859->00e2`（285000->320000）和一个 additive_checksum 字节
+- 512 KiB 窗口的校验和规则是 `sum(0..0xFBFF) + b[0xFBFF] ≡ 0 (mod 256)`，
+  五个镜像（含原厂 dump）全部符合
+- 四个 payload 里搜 `0x0082381c` / `0x00823820` / `0x00823804` / `0x27304036`
+  / `0x00410080` / `0x00000233`：**全部 0 命中**
+
+所以 override 镜像里根本没有 SM 寄存器初值。冲突来自固件初始化路径被改变，
+不是某个字段被覆盖。
+
+**`RUN0006` 是反证**：同一套 override 机制下，v1 payload 那次冷启动
+`entry: plm=0xffffff8f ss0=0x27104036 ss1=0x1`，`SS1=1` 正常，事务全程通过。
+而把 `power_default_w` 拉成 320 之后，六次全部读 0。
+
+**改法**：让解锁侧接受两种入口态，不去动 override 那边。
+
+```c
+BOOLEAN stock=(*Ss1==0x1U),blank=(*Ss0==0U&&*Ss1==0U);
+if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!blank)){
+```
+
+同时 `unlock_610.c` 主闸门的 `ss1!=1` 改成 `!(ss1==1 || (ss0==0 && ss1==0))`。
+
+能这么改是因为全链路本来就不写死 SS1 的值：
+
+- `port.c` 的 `GuEntrySelectorsMatch` 比对的是 `Ss1==EntrySs1`，不是字面量 1
+- `GuLatchEntrySelectors` 的闸门是 `Ss1>0xfU`，blank 态本来就能过
+- `GuSelectorPhase` 状态机在 `SS0_WRITTEN` / `SS1_WRITE` 阶段要求
+  `ss1==entry1`，blank 态下 `entry1=0`，自洽
+- `check_entry_selectors` 用 `b!=work->ss1_entry`，同样自洽
+- pre-FLR / post-FLR 要求的是写入后的目标值 `0x88888888` / `0x8`，与入口态无关
+
+验证方式不是看日志（成功的 permutation 静默通过，`GuLog` 只在失败时打），
+而是数场景条数：`test_efi_transaction` 的 30 个 scenario 各跑 4 次
+（3 个 stock SS0 变体 + 1 个 blank），日志里 `EFI integration` 恰好 120 条。
+
+**顺带修掉的三处上游夹具残留**。`test_efi_transaction` 在这个端口上从来跑不起来，
+一层层挖下去全是上游 AD104 卡的常量：
+
+| 位置 | 上游值 | 这台机器 |
+|---|---|---|
+| `tests/captured_config.h` | device `0x2782`，bus 1 | `0x2705`，bus 8（来自 `CAP0002.JSON` 的 `config256`） |
+| `location` 桩 | `*b=1` | `*b=8` |
+| `setup()` 寄存器 | `registers[0]=0x194000a1`、`0x1183a4=0x2800`、`0x1fa830=0x2ef9ff0` | `0x193000a1` / `0x3ff8` / `0x3cf7ff0` |
+| `gpu_unlock_610_load_shared` 的 device | 测试写 `.device=0x2782` | `.device=0x2705` |
+| `tests/test_guards.c` | 两处 `0x2782` | 一为 `0x2705`，case 8 保留 `0x2782`（它的作用就是测「认错卡要拒」） |
+| FWSEC 几何 | `image_off=0x45488`、`image_size=0x10300` | `0x45b48` / `0x10500` |
+| WPR2 桩 | `0x2ff8000` / `0x2ff8ff0` | `0x3ff6000` / `0x3ff6e00` |
+| booter 发布地址 | `delta=0x7fa00000` 偏移法 | 直接写本机布局真值 |
+| 失败路径断言 | `registers[SS1/4]==1` | `==test_entry_ss1` |
+
+`0x5053000` 那两个硬编码**不是残留**：`gsp_ga10x.bin` 的 `.fwimage` 段就是
+`0x5053000`，radix 计划 `[1,1,41,20563]` 由此推出。
+
+修完之后 `test_efi_transaction` 第一次返回 0：90 scenario / 120 条 integration 行。
+`test_guards` 的 17 个 admission case 也全过。
+
+**顺序教训**：不要一次把可疑常量全改掉。跑一次、看一条断言、改一条。
+上面那张表里 `0x5053000` 差一点被当成上游残留改掉，是「只改当前断言指的那一条」
+这个纪律把它挡住的。

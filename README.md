@@ -317,5 +317,11 @@ A 和 C 都有直接判据：`RUN0005` 日志里 `preflight[6b] CacheGpuChildren
 装上去就卡在 boot 阶段，唯一存活线索是 `boot_io.c` 的 `Inspect()` 会拒绝第二个
 `MEDIA_HARDDRIVE_DP` 节点（已改，但从未在 ESP 路径上重测）。
 
-移植期撞到的坑：[docs/PITFALLS.md](docs/PITFALLS.md)（12 条，含 cuBLAS alpha 那条）。
+**和 320 W VBIOS override 的冲突**：用 `vbios-loader` 载入改过功率表的 VBIOS 之后，
+某些冷启动下 `0x82381c`/`0x823820` 读回 0，旧闸门要求 `SS1==1` 于是整条路被拒
+（六份日志 sha256 逐字节相同）。override 镜像里没有 SM 寄存器初值，所以冲突不在
+覆盖，而在初始化路径。现在入口接受两种状态：stock `SS1==1`、blank `SS0==SS1==0`，
+`test_efi_transaction` 的 30 个场景各跑 4 组 permutation 覆盖这两种。**改动未上硬件验证。**
+
+移植期撞到的坑：[docs/PITFALLS.md](docs/PITFALLS.md)（13 条，含 cuBLAS alpha 那条）。
 路走到哪、重跑看什么：[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
