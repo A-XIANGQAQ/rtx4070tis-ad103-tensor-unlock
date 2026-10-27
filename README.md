@@ -361,7 +361,7 @@ blank 过了 / blank 过了又停 / 跳过 / 截断），并对「事务跑完�
 修好之后它们成了死代码，其中两处还是 `else if` 分支，命中后 `failed` 仍是 `NULL`，
 等于配置检查没跑就宣告成功。现在已恢复硬失败。
 
-移植期撞到的坑：[docs/PITFALLS.md](docs/PITFALLS.md)（17 条，含 cuBLAS alpha、
+移植期撞到的坑：[docs/PITFALLS.md](docs/PITFALLS.md)（18 条，含 cuBLAS alpha、
 `Sealed` 那条、为了绕过 `GpuChild()` 而放宽的图检查、`profile.c` 是生成文件这件事，
 以及工作区里启动的进程写不了工作区外的临时目录）。
 路走到哪、重跑看什么：[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
