@@ -346,14 +346,16 @@ A 和 C 都有直接判据：`RUN0005` 日志里 `preflight[6b] CacheGpuChildren
 
 `app.c` 在驱动放开 GPU 之后、交棒之前还会再跑一次 `GuAd104ColdEntry()`。这条复检
 以前没有任何测试盖到：`test_app_flow` 把它桩成 `TRUE`，`test_msi_release` 桩成一个
-变量，`test_efi_transaction` 只调 `GuAd104Prepare()`。现在夹具在 `Prepare()` 之后
-紧接着调它，四种 permutation 都会跑到。**改动未上硬件验证。**
+变量，`test_efi_transaction` 只调 `GuAd104Prepare()`。现在两处都补上了：
+`test_efi_transaction` 在 `Prepare()` 之后紧接着调它，四种 permutation 都会跑到；
+`test_app_flow` 的 case 13 在 release 之后让它返回 `FALSE`，断言此时必须 halt、
+绝不启动 Windows。**改动未上硬件验证。**
 
 五个测试套件现在都在这个端口上跑得起来，全部返回 0：
 
 | 套件 | 规模 | 之前为什么跑不了 |
 |---|---|---|
-| `test_app_flow` | 272 checks / 15 scenarios | — |
+| `test_app_flow` | 291 checks / 16 scenarios | — |
 | `test_guards` | 17 admission cases | 两处 device id 写的是上游 AD104 的 `0x2782` |
 | `test_efi_transaction` | 120 scenarios（30 × 4 permutation） | 配置空间、寄存器初值、FWSEC 几何、WPR2 桩全是上游卡的常量 |
 | `test_boot_io` | 615 checks / 8 cases | pin 了上游 3086728 字节的 bootmgr，这台是 3086680 |
