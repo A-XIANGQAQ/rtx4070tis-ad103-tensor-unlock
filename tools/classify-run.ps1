@@ -44,6 +44,7 @@ function Classify($item) {
   # showed result=-5 and nothing pointing at a reason. From DDE1A608 onward
   # the refusal names which of its five preconditions gave way.
   $flrRefused    = @($lines | Where-Object { $_ -match '^FLR refused: ' })
+  $selectorRefused = @($lines | Where-Object { $_ -match '^selector phase (?:refused|gate refused|rejected): ' })
   $stop          = @($lines | Where-Object { $_ -match '^STOP: stage=' })
   # app.c split one ambiguous label into two after the driver let go, so the stage
   # name alone now says which refusal it was.
@@ -64,7 +65,12 @@ function Classify($item) {
 
   $verdict = 'UNKNOWN'
   $why     = 'no recognised line'
-  if ($flrRefused.Count -gt 0) {
+  if ($selectorRefused.Count -gt 0) {
+    # A selector write was judged bad before the reset. That happens inside the
+    # transaction, so it shows up as result=-5 with no stage name attached.
+    $verdict = 'SELECTOR-WRITE-REFUSED'
+    $why     = 'a selector write was judged bad before the reset, inside the selector step'
+  } elseif ($flrRefused.Count -gt 0) {
     # The reset itself was refused, so the transaction could not have done
     # anything; result=-5 is a consequence, not the finding. Name the gate.
     $verdict = 'FLR-REFUSED'
@@ -147,6 +153,7 @@ function Classify($item) {
   if ($coldRefused.Count   -gt 0) { "gate      : " + ($coldRefused[-1]) }
   if ($prepareRefused.Count -gt 0) { "prepare   : " + ($prepareRefused[-1]) }
   if ($flrRefused.Count    -gt 0) { "flr       : " + ($flrRefused[-1] -replace '^FLR refused: ','') }
+  if ($selectorRefused.Count -gt 0) { "selector  : " + ($selectorRefused[-1] -replace '^selector phase ','') }
   if ($stopStage) { "refusedAt : " + $stopStage }
   if ($txResult.Count  -gt 0) { "tx        : " + ($txResult[-1] -replace '^Transaction result=','') }
   if ($handoff.Count   -gt 0) { "handoffChk: checked" }

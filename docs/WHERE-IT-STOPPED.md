@@ -292,6 +292,10 @@ blank 是 `SS0==0 && SS1==0`。改动落在
   或 `-EPROTO`，日志上只有数字。现在它打
   `entry selectors refused: saved=.. verified=.. read=../.. SS0=.. SS1=.. entry=.. ..`，
   并且只在原来那段短路会读 BAR0 的情况下才去读。
+- `GuSelectorPhase()` 本身有三闸（转移顺序、六个开关、写后回读），`unlock_transaction_selector()`
+  把每个 `FALSE` 都变成裸的 `-EIO`。现在分别打 `selector phase refused:` / `selector phase gate refused:` /
+  `selector phase rejected:`，最后一条带 `SS0` / `SS1` / `entry` 三个值。这一条很关键：
+  入口时 `SS0=0` 与写完乘以后又读回 `SS0=0` 是两个不同的问题。
 
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
 `H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`；`DDE1A608`、`8BEEE6FE`、`75314A88`、`250C7EA1`
@@ -322,17 +326,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给十六种判决（不含 `UNKNOWN` 那个占位），下表是全部十六种。四种在真实日志上出现过，
+它给十七种判决（不含 `UNKNOWN` 那个占位），下表是全部十七种。四种在真实日志上出现过，
 其余只有合成样例（`blank` 那两种要等
 `RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`ENTRY-REFUSED-NEITHER-STATE`、
 `GATE-REFUSED-AFTER-RELEASE`、`CLAIM-NOT-HELD`、`TRANSACTION-FAILED`、
-`TRANSACTION-FAILED-THEN-STOP`、`FLR-REFUSED` 与 `TRUNCATED` 至今没在真机上出现过）：
+`TRANSACTION-FAILED-THEN-STOP`、`FLR-REFUSED`、`SELECTOR-WRITE-REFUSED` 与 `TRUNCATED` 至今没在真机上出现过）：
 
 | 判决 | 含义 | 出处 |
 |---|---|---|
 | `TRANSACTION-COMPLETE` | `Transaction result=0`，事务跑完了，进 Windows 后验算力 | `RUN0004`–`RUN0006` |
 | `TX-OK-THEN-HALT` | `Transaction result=0`，但随后某段 `STOP` | `RUN0001` / `RUN0002` |
 | `TRANSACTION-FAILED` | `Transaction result` 非 0，没有 `STOP` | 合成样例 |
+| `SELECTOR-WRITE-REFUSED` | 选通器写完后被自己的回读判为不对，没走到 reset，`result=-5` 只是后果 | 合成样例 |
 | `FLR-REFUSED` | `GuFlr()` 在 reset 前就拒了，事务一次都没跑，`result=-5` 只是后果 | 合成样例 |
 | `TRANSACTION-FAILED-THEN-STOP` | `Transaction result` 非 0，随后某段 `STOP` | 合成样例 |
 | `ENTRY-REFUSED-SELECTOR` | 那版 EFI 还没有 blank 闸门，`SS0=0 SS1=0` 是它正常的拒绝 | `RUN0007`–`RUN0012` |
@@ -353,9 +358,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 资产校验、读 PROM 出错、PROM 不是本 build pin 的那份、FWSEC 描述符被拒、
 以及读取过程中 config 或选通器发生了变化。报告里的 `prepare :` 那行直接给名字。
 
-`FLR-REFUSED` 排在最前面：它在 `GuFlr()` 里就拒了，事务体根本没进去，所以
-`result=-5` 是后果不是原因。报告里的 `flr :` 那行把五个前置条件里的现场值
-（`verified` / `fault` / `latched` / `SS0` / `SS1` / `entry` / `phase`）一起打出来。
+`SELECTOR-WRITE-REFUSED` 与 `FLR-REFUSED` 排在最前面，它们都是「还没进 reset 就被自己的闸门拦下」，
+所以 `result=-5` 是后果不是原因。报告里 `flr :` 那行打五个前置条件的现场值
+（`verified` / `fault` / `latched` / `SS0` / `SS1` / `entry` / `phase`），`selector :` 那行打选通器那三闸里
+哪一个拒的以及它看到的 `SS0` / `SS1` / `entry`。
 
 其余几条的分界是 `Transaction result` 后面那个数：`=0` 才叫 OK。以前只看这一行在不在，
 于是 `result=-5` 之后再 `STOP` 也会被归到 `TX-OK-THEN-HALT` —— 判决名里带 OK，
