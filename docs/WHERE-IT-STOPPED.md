@@ -200,7 +200,7 @@ STOP: stage=read-only-cold-profile status=0x8000000000000006 mutated=0 retained=
 - 四个 payload 加原厂 ROM 逐字节比过：`0xBF89` 是 `power_default_w`、`0xBF8D` 是
   `power_max_w`（u32，mW）；`v2` 与 `v1` 只差 3 字节。四个镜像里搜
   `0x0082381c` / `0x00823820` / `0x00823804` / `0x27304036` / `0x00410080` /
-  `0x00000233` 全部 0 命中 —— **override 里没有 SM 寄存器初值**。冲突不在覆盖，
+  `0x00000233` 全部 0 命中，**override 里没有 SM 寄存器初值**。冲突不在覆盖，
   在初始化路径。
 - `RUN0006` 是反证：同一套 override（`v1`）下那次读到 `ss0=0x27104036 ss1=0x1`，
   事务一路跑通。所以不是「一挂 override 就必然为 0」。
@@ -217,20 +217,43 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 `b!=work->ss1_entry`，pre/post-FLR 要求的是写入后的目标值 `0x88888888`/`0x8`，与入口态无关。
 
 验证方式是 `test_efi_transaction`：30 个场景 × 4 组 permutation（3 个 stock 变体 +
-1 个 blank），共 120 条 `EFI integration` 行，`TEST_EXIT=0`。数条数而不是看日志文本 ——
+1 个 blank），共 120 条 `EFI integration` 行，`TEST_EXIT=0`。数条数而不是看日志文本，
 成功的 permutation 是静默的。
 
 **这一步只在离线仿真里过了，没有上硬件。** 真机上要冷启动一次才知道 blank 态到底
 能不能走完事务。
 
 `H:\EFI\BOOT\BOOTX64.EFI` 已经是含这处改动的版本（104960 B / `64d70365…`），
-`RUN0013` 就是这一版的第一次硬件尝试。判据只有一条：日志长度。
+`RUN0013` 就是这一版的第一次硬件尝试。
 
-| 日志 | 含义 |
-|---|---|
-| 285 B，三行，`cold-profile selector mismatch` | blank 态没有被接受（改动没生效，或 EFI 不是这一版） |
-| 有 `cold-profile blank selectors: SS0=0 SS1=0, accepted as no-override entry state` | 闸门过了，接着看它走到哪一步 |
-| 出现 `Transaction result=` | 事务跑完了，进 Windows 后按下一节验算力 |
+判读用 `tools\classify-run.ps1`，不用自己数长度：
+
+```powershell
+# 最新那份日志
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1
+# 指定某一轮
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File H:\AD104-UNLOCK\RUN0013.TXT
+# 全部历史，一行一份
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
+```
+
+它给八种判决。四种在真实日志上出现过，其余四种只有合成样例（`blank` 那两种要等
+`RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN` 与 `TRUNCATED` 至今没在真机上出现过）：
+
+| 判决 | 含义 | 出处 |
+|---|---|---|
+| `TRANSACTION-COMPLETE` | 事务跑完了，进 Windows 后验算力 | `RUN0004`–`RUN0006` |
+| `TX-OK-THEN-HALT` | 事务体出结果，但随后某段 `STOP` | `RUN0001` / `RUN0002` |
+| `ENTRY-REFUSED-SELECTOR` | 选通器不匹配任何接受的入口态 | `RUN0007`–`RUN0012` |
+| `SKIPPED` | 按了跳过键，没做事 | `RUN0003` |
+| `BLANK-ACCEPTED-THEN-STOP` | blank 态过了，后面某段 `STOP` | 合成样例 |
+| `BLANK-ACCEPTED` | blank 态过了，没有 `STOP` | 合成样例 |
+| `ENTRY-REFUSED-PIN` | 19 个 pin 里有一个不对，没走到选通器 | 合成样例 |
+| `TRUNCATED` | 日志三行以内，任何闸门都没来得及报 | 合成样例 |
+
+对 `TRANSACTION-COMPLETE` 它还会打 `nextBoot`：日志写完到下一个 Windows 启动事件的秒数。
+`+3s` / `+4s` 是正常交棒；`RUN0004` 是 `+144s`，那 144 秒就是它拿着已经成功的硬件状态
+干等、最后被按了重启键。光看 `Transaction result=0` 看不出这件事。
 
 如果停在 `blank selectors` 之后，说明被拒的位置在 `unlock_610.c` 的主闸门或更后面，
 `STOP:` 行里的 `stage=` 会指明是哪一段。

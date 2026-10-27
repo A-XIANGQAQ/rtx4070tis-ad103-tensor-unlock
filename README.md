@@ -312,6 +312,12 @@ A 和 C 都有直接判据：`RUN0005` 日志里 `preflight[6b] CacheGpuChildren
 和 `handoff check passed` 同时出现，且 `GPU graph missing` / `finish incomplete`
 一条都没有。B 只验证了不会误触发，它的用处是下次被拒时能看见原因。
 
+判读日志用 `tools\classify-run.ps1`：不给参数就取最新那份，`-All` 把历史上每一轮
+压成一行。它把八种结局分开（事务跑完 / 事务成功但随后 halt / pin 拒 / 选通器拒 /
+blank 过了 / blank 过了又停 / 跳过 / 截断），并对「事务跑完」那种额外打印日志写完到
+下一个 Windows 启动事件的秒数。`RUN0004` 就是靠这个看出问题的：硬件状态已经写进去了，
+但 EFI 干等 144 秒没交棒，最后被按了重启键，于是那次成功白丢。
+
 **没做的**：ESP 接管那条仍然未验证通过（事故与恢复路线见
 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)）。这台机器上它
 装上去就卡在 boot 阶段，唯一存活线索是 `boot_io.c` 的 `Inspect()` 会拒绝第二个
