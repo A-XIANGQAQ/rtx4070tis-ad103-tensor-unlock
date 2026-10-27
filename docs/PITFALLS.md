@@ -529,6 +529,11 @@ STOP: stage=read-only-cold-profile status=0x8000000000000006 mutated=0 retained=
 
 六份日志 sha256 都是 `8F61DB14...`，跨 3 小时、跨两种 payload，逐字节相同。
 
+**先看这行是怎么写的再往下读。** 上面那份是 `wantSS1=0x1`，那是 blank 闸门还不存在时
+的措辞（`cef0935` 才把闸门加进去，10-28 01:05）。带闸门的版本遇到同样情况打的是
+`stockSS1=0x1`。所以这六次证明的是「320 W override 下 `SS0`/`SS1` 读 0」，不是
+「闸门没管用」—— 后者一次都没上过机。
+
 **这两行说明的事，比它看起来多。**
 
 `cold-profile selector mismatch` 是在 `profile.c` 里 19 个 pin **全部匹配之后**

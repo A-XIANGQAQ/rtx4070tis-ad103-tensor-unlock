@@ -28,7 +28,12 @@ function Classify($item) {
   # app.c runs the entry gate a second time after GuMsiRelease. A refusal there
   # is worse than the first one: the drivers are already detached.
   $coldRefused   = @($lines | Where-Object { $_ -match '^cold-entry' })
+  # The mismatch line itself says which build printed it. Before the blank gate
+  # existed it ended with wantSS1=; after, with stockSS1=. Same verdict text,
+  # two different findings, so the log alone has to tell them apart.
   $entryRefused  = @($lines | Where-Object { $_ -match 'cold-profile selector mismatch' })
+  $mismatchOld   = @($entryRefused | Where-Object { $_ -match 'wantSS1=' })
+  $mismatchNew   = @($entryRefused | Where-Object { $_ -match 'stockSS1=' })
   $pinRefused    = @($lines | Where-Object { $_ -match 'cold-profile register mismatch' })
   $stop          = @($lines | Where-Object { $_ -match '^STOP: stage=' })
   # app.c split one ambiguous label into two after the driver let go, so the stage
@@ -54,6 +59,12 @@ function Classify($item) {
   } elseif ($pinRefused.Count -gt 0) {
     $verdict = 'ENTRY-REFUSED-PIN'
     $why     = 'a stock register pin did not match before the selector check'
+  } elseif ($mismatchNew.Count -gt 0) {
+    $verdict = 'ENTRY-REFUSED-NEITHER-STATE'
+    $why     = 'this build accepts stock and blank, so the selectors were a third state'
+  } elseif ($mismatchOld.Count -gt 0) {
+    $verdict = 'ENTRY-REFUSED-SELECTOR'
+    $why     = 'an EFI without the blank gate; SS0=0 SS1=0 is the expected refusal here'
   } elseif ($entryRefused.Count -gt 0) {
     $verdict = 'ENTRY-REFUSED-SELECTOR'
     $why     = 'selectors did not match an accepted entry state'

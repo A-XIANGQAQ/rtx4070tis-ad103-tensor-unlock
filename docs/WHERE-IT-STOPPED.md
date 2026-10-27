@@ -268,6 +268,12 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 结果就是 `RUN0007`..`RUN0012` 那六份 285 字节的日志。也就是说「换回能解锁的那版」
 和「保留 320 W」这两件事目前是互斥的。
 
+日志自己会说明是哪一版打的。blank 闸门是 `cef0935`（10-28 01:05）才进的代码，之前那版
+匹配失败时打 `wantSS1=0x1`，之后那版打 `stockSS1=0x1`。`RUN0007`–`RUN0012` 六份全是
+`wantSS1=`，也就是说那六次跑的是**还没有 blank 闸门**的版本 —— 它们证明的是「320 W
+override 下 `SS0`/`SS1` 读 0」，不是「blank 闸门不管用」。带 `stockSS1=` 的版本一次都
+没上过机，`RUN0013` 才是它的第一次。翻日志先看这一处，能省一轮冷启动。
+
 判读用 `tools\classify-run.ps1`，不用自己数长度：
 
 ```powershell
@@ -279,7 +285,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给十种判决。四种在真实日志上出现过，其余六种只有合成样例（`blank` 那两种要等
+它给十一种判决。五种在真实日志上出现过，其余六种只有合成样例（`blank` 那两种要等
 `RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`GATE-REFUSED-AFTER-RELEASE`、
 `CLAIM-NOT-HELD` 与 `TRUNCATED` 至今没在真机上出现过）：
 
@@ -287,7 +293,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 |---|---|---|
 | `TRANSACTION-COMPLETE` | 事务跑完了，进 Windows 后验算力 | `RUN0004`–`RUN0006` |
 | `TX-OK-THEN-HALT` | 事务体出结果，但随后某段 `STOP` | `RUN0001` / `RUN0002` |
-| `ENTRY-REFUSED-SELECTOR` | 选通器不匹配任何接受的入口态 | `RUN0007`–`RUN0012` |
+| `ENTRY-REFUSED-SELECTOR` | 那版 EFI 还没有 blank 闸门，`SS0=0 SS1=0` 是它正常的拒绝 | `RUN0007`–`RUN0012` |
+| `ENTRY-REFUSED-NEITHER-STATE` | 这版已接受两种入口态，选通器落到了第三种状态 | 合成样例 |
 | `SKIPPED` | 按了跳过键，没做事 | `RUN0003` |
 | `BLANK-ACCEPTED-THEN-STOP` | blank 态过了，后面某段 `STOP` | 合成样例 |
 | `BLANK-ACCEPTED` | blank 态过了，没有 `STOP` | 合成样例 |
