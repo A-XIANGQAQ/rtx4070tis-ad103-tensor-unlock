@@ -319,10 +319,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 | `BLANK-ACCEPTED-THEN-STOP` | blank 态过了，后面某段 `STOP` | 合成样例 |
 | `BLANK-ACCEPTED` | blank 态过了，没有 `STOP` | 合成样例 |
 | `ENTRY-REFUSED-PIN` | 19 个 pin 里有一个不对，没走到选通器 | 合成样例 |
+| `ENTRY-REFUSED-PREPARE` | 冷启动准备就拒了，日志里有 `cold-prepare: ...` 说清是哪一处 | 合成样例 |
 | `CLAIM-NOT-HELD` | 驱动放开 GPU 之后独占声明没拿住，事务一次都没跑 | 合成样例 |
 | `GATE-REFUSED-AFTER-RELEASE` | 入口闸门在驱动放开 GPU 之后又跑了一次并拒绝 | 合成样例 |
 | `TRUNCATED` | 日志三行以内，任何闸门都没来得及报 | 合成样例 |
 | `STOPPED` | 没有匹配上任何特征，只有兜底 | 合成样例 |
+
+`ENTRY-REFUSED-PREPARE` 这一条有额外信息量：旧 EFI 在同一个位置只给
+`status=0x8000000000000006`、一行日志都不打，所以这一判决出不来本身就是
+「你跑的还是旧版」的证据。新版把十一处各自命名 —— 前六个 `Gu.*` 标志、
+资产校验、读 PROM 出错、PROM 不是本 build pin 的那份、FWSEC 描述符被拒、
+以及读取过程中 config 或选通器发生了变化。报告里的 `prepare :` 那行直接给名字。
 
 前四条的分界是 `Transaction result` 后面那个数：`=0` 才叫 OK。以前只看这一行在不在，
 于是 `result=-5` 之后再 `STOP` 也会被归到 `TX-OK-THEN-HALT` —— 判决名里带 OK，
