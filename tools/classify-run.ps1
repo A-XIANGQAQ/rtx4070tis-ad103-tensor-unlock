@@ -40,6 +40,13 @@ function Classify($item) {
   # name alone now says which refusal it was.
   $stopStage     = if ($stop.Count -gt 0) { $stop[-1] -replace '^STOP: stage=([^ ]+).*','$1' } else { '' }
   $txResult      = @($lines | Where-Object { $_ -match '^Transaction result=' })
+  # The line exists whether the body succeeded or failed, so the verdict has to
+  # read the number. A run that failed at result=-5 and then stopped used to be
+  # filed under TX-OK-THEN-HALT, which says OK about a body that returned -5.
+  $txCode        = $null
+  if ($txResult.Count -gt 0) {
+    if ($txResult[-1] -match '^Transaction result=(-?\d+)') { $txCode = [int]$Matches[1] }
+  }
   $entry         = @($lines | Where-Object { $_ -match '^entry: plm=' })
   $handoff       = @($lines | Where-Object { $_ -match 'handoff check passed' })
   $residual      = @($lines | Where-Object { $_ -match 'release: residual edges' })
@@ -48,7 +55,18 @@ function Classify($item) {
 
   $verdict = 'UNKNOWN'
   $why     = 'no recognised line'
-  if ($txResult.Count -gt 0 -and $stop.Count -gt 0) {
+  if ($null -ne $txCode -and $txCode -ne 0) {
+    # A body that returned non-zero did not unlock anything; whether a stage then
+    # stopped is secondary. Keep the two separate so a failure is never mistaken
+    # for the RUN0004 shape (body OK, handoff lost).
+    if ($stop.Count -gt 0) {
+      $verdict = 'TRANSACTION-FAILED-THEN-STOP'
+      $why     = "transaction body returned $txCode, then a stage stopped"
+    } else {
+      $verdict = 'TRANSACTION-FAILED'
+      $why     = "transaction body returned $txCode"
+    }
+  } elseif ($txResult.Count -gt 0 -and $stop.Count -gt 0) {
     # The body succeeded and the run then halted anyway. That is what carries the
     # hardware state away from stock, so it is not the same as a clean handoff.
     $verdict = 'TX-OK-THEN-HALT'
@@ -109,7 +127,7 @@ function Classify($item) {
   if ($blankAccepted.Count -gt 0) { "blank     : accepted $($blankAccepted.Count)x" }
   if ($coldRefused.Count   -gt 0) { "gate      : " + ($coldRefused[-1]) }
   if ($stopStage) { "refusedAt : " + $stopStage }
-  if ($txResult.Count  -gt 0) { "tx        : " + ($txResult[-1] -replace '^Transaction result: ','') }
+  if ($txResult.Count  -gt 0) { "tx        : " + ($txResult[-1] -replace '^Transaction result=','') }
   if ($handoff.Count   -gt 0) { "handoffChk: checked" }
   if ($residual.Count  -gt 0) { "residual  : " + ($residual[-1] -replace '^release: residual edges on GPU handles=','') }
   if ($stop.Count      -gt 0) { "stop      : " + ($stop[-1] -replace '^STOP: ','') }

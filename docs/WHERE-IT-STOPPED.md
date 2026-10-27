@@ -285,15 +285,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给十二种判决（不含 `UNKNOWN` 那个占位），下表是全部十二种。四种在真实日志上出现过，
+它给十四种判决（不含 `UNKNOWN` 那个占位），下表是全部十四种。四种在真实日志上出现过，
 其余只有合成样例（`blank` 那两种要等
 `RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`ENTRY-REFUSED-NEITHER-STATE`、
-`GATE-REFUSED-AFTER-RELEASE`、`CLAIM-NOT-HELD` 与 `TRUNCATED` 至今没在真机上出现过）：
+`GATE-REFUSED-AFTER-RELEASE`、`CLAIM-NOT-HELD`、`TRANSACTION-FAILED`、
+`TRANSACTION-FAILED-THEN-STOP` 与 `TRUNCATED` 至今没在真机上出现过）：
 
 | 判决 | 含义 | 出处 |
 |---|---|---|
-| `TRANSACTION-COMPLETE` | 事务跑完了，进 Windows 后验算力 | `RUN0004`–`RUN0006` |
-| `TX-OK-THEN-HALT` | 事务体出结果，但随后某段 `STOP` | `RUN0001` / `RUN0002` |
+| `TRANSACTION-COMPLETE` | `Transaction result=0`，事务跑完了，进 Windows 后验算力 | `RUN0004`–`RUN0006` |
+| `TX-OK-THEN-HALT` | `Transaction result=0`，但随后某段 `STOP` | `RUN0001` / `RUN0002` |
+| `TRANSACTION-FAILED` | `Transaction result` 非 0，没有 `STOP` | 合成样例 |
+| `TRANSACTION-FAILED-THEN-STOP` | `Transaction result` 非 0，随后某段 `STOP` | 合成样例 |
 | `ENTRY-REFUSED-SELECTOR` | 那版 EFI 还没有 blank 闸门，`SS0=0 SS1=0` 是它正常的拒绝 | `RUN0007`–`RUN0012` |
 | `ENTRY-REFUSED-NEITHER-STATE` | 这版已接受两种入口态，选通器落到了第三种状态 | 合成样例 |
 | `SKIPPED` | 按了跳过键，没做事 | `RUN0003` |
@@ -304,6 +307,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 | `GATE-REFUSED-AFTER-RELEASE` | 入口闸门在驱动放开 GPU 之后又跑了一次并拒绝 | 合成样例 |
 | `TRUNCATED` | 日志三行以内，任何闸门都没来得及报 | 合成样例 |
 | `STOPPED` | 没有匹配上任何特征，只有兜底 | 合成样例 |
+
+前四条的分界是 `Transaction result` 后面那个数：`=0` 才叫 OK。以前只看这一行在不在，
+于是 `result=-5` 之后再 `STOP` 也会被归到 `TX-OK-THEN-HALT` —— 判决名里带 OK，
+内容却是失败的。`app.c:73-76` 在 `result` 非 0 时会直接 `goto failed`，所以真机上
+这两种新判决一定伴随 `STOP: stage=firmware-transaction`。
 
 对 `TRANSACTION-COMPLETE` 它还会打 `nextBoot`：日志写完到下一个 Windows 启动事件的秒数。
 `+3s` / `+4s` 是正常交棒；`RUN0004` 是 `+144s`，那 144 秒就是它拿着已经成功的硬件状态
