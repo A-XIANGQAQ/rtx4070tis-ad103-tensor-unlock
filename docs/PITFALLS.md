@@ -607,15 +607,15 @@ if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!
 
 `inaccessible(ss0)` 对 `ss0=0` 也不成立（它只拒 `~0` 和 `0xbadf0000` 段）。
 
-这是**推断，不是证明**：那五个 pin 是在 `Prepare()` 里读的，主闸门在驱动放开 GPU
+这是**推断，不是证明**（后来 `RUN0013` 把它证实了，见本条末尾）：那五个 pin 是在 `Prepare()` 里读的，主闸门在驱动放开 GPU
 之后又读了一次（`unlock_610.c` 里的 `read_bar` 调用），两次之间寄存器的值可以变。
 日志能证明的只有「`Prepare()` 那次它们是 stock 值」。剩下的靠两点旁证：六份失败
 日志既没有 `register mismatch` 也没有 `config mismatch`，而且 `RUN0005` 与 `RUN0006`
 两份成功日志的 184 行里只差 10 行，那五行 `entry:`/`selector read:` 之外的寄存器
 读数全部逐字相同 —— 说明 `Prepare()` 到主闸门之间这些东西没动过。
 
-所以 `ss1!=1` 是当时**最可能**挡住路的合取项。真要确认，得让那六次跑到主闸门并
-打印 `entry:` 行 —— 那六次连这一行都没有，因为它们在 `Prepare()` 就 `STOP` 了。
+所以 `ss1!=1` 是当时**最可能**挡住路的合取项。当时还没确认，因为那六次连 `entry:` 行都没有，
+它们在 `Prepare()` 就 `STOP` 了。
 
 能这么改是因为全链路本来就不写死 SS1 的值：
 
@@ -655,6 +655,39 @@ if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!
 **顺序教训**：不要一次把可疑常量全改掉。跑一次、看一条断言、改一条。
 上面那张表里 `0x5053000` 差一点被当成上游残留改掉，是「只改当前断言指的那一条」
 这个纪律把它挡住的。
+
+**结果：2026-10-28 07:43 那次冷启动跑通了。** `RUN0013`（13652 B，sha256 `0FC8A3C3...`，190 行）
+全程通过，而且那次开机的 override 确实是生效的：`vbios-loader verify`
+报 `state: override-active`、`match: true`、`first_difference: null`（内存 522752 B /
+`b2751d09...` 逐字节相等），`nvidia-smi` 报 `320/320/320 W`。
+也就是说 **320 W override 与 SM 解锁现在同时生效**。
+
+日志里这几行是那个推断的直接证据：
+
+```
+ 112  entry: plm=0xffffff8f ss0=0 ss1=0 wpr2_hi=0
+ 116  AD102 permission before-firmware: FEAT[0x823804]=0xffffff8f before=0xffffff8f expected=0xffffffff ...
+ 157  selector read: SS0=0 expected_unlock=0x88888888
+ 158  selector write: SS0=0x88888888
+ 159  selector result: SS0=0x88888888 expected=0x88888888 matched=1
+ 161  selector write: SS1=0x8
+ 162  selector result: SS1=0x8 expected=0x8 matched=1
+ 176  post-FLR SEC2 reset released, GSP halted, BME=0 pending=0 WPR2=1ffffe00:00000000 SS0=88888888 SS1=00000008
+ 186  Transaction result=0 safe=1 retained=0 started=1 quiesced=1 flrs=1 DMA_live=0
+ 190  TRANSACTION OK: hardware readbacks passed, DMA released; handoff check passed; ...
+```
+
+`entry:` 那行里 `ss0=0 ss1=0`、`plm=0xffffff8f`、`wpr2_hi=0` 三个值同时成立，
+就是上面那张五行表里的四个合取项逐个真实通过（`inaccessible(ss0)` 对 0 不成立）。
+所以 `ss1!=1` 确实是当时唯一挡路的那一条，其余四条没有被改动，也不需要被改动。
+
+blank 闸门在这一次共命中 9 次（`classify-run.ps1` 报 `blank: accepted 9x`）：
+一次 `Prepare()`、一次主闸门、一次 pre-FLR、一次 post-FLR，加上中间那几次状态回读。
+它们全部落在「尝试拒绝」这一侧，放行后不再打印。
+
+一个仍存的小差异：`release: residual edges on GPU handles=1 expected=0` 在 `RUN0013` 里
+出现 5 次，和 `RUN0005`/`RUN0006` 一样（也是 5 次，也是 1），不是这次新增的。
+两次成功跑都带着它，且 `TRANSACTION OK` 照常，所以不阻断交棒。
 
 ## 14. `Sealed` 是会话级状态，但只在关日志时置位、从不复位
 

@@ -11,7 +11,8 @@
 ## 结果
 
 `mma_bench`，register-resident 指令发射率，20000 iter，66 SM，sm_89。表中「解锁后」
-是 `RUN0005` 那次开机的采集（5 rep，取 best）：
+是 `RUN0005` 那次开机的采集（5 rep，取 best，285 W）。挂着 320 W VBIOS override
+跑通的那次是 `RUN0013`，同一个仪器在 320 W 下的数字在表后单列。
 
 | 模式 | 解锁前 | 解锁后 | 倍数 | 是否目标 |
 |---|---:|---:|---:|---|
@@ -34,6 +35,24 @@
 
 另外四行来自 cuBLAS GEMM（N=8192，含 alpha 宽度校验），没有 stock 对照，只有解锁后的
 绝对值。
+
+`RUN0013`（2026-10-28 07:43，320 W override 生效）同一个 `mma_bench` 20000/3，连跑四次。
+下表是最后一次，原始输出在 [results/mma-unlocked-320w-run0013.txt](results/mma-unlocked-320w-run0013.txt)：
+
+| 模式 | 320 W 解锁后 | 285 W 解锁后 | stock |
+|---|---:|---:|---:|
+| `f16/f32` | **181.3** | 176.1 | 88.0 |
+| `bf16/f32` | **182.2** | 175.6 | 87.9 |
+| `f16/f16` | 180.9 | 175.1 | 175.6 |
+| `s8/s32` | 367.8 | 348.0 | 352.5 |
+| `dp4a` | 89.8 | 87.7 | 87.0 |
+| `ffma` | 41.7 | 41.5 | 41.8 |
+
+判据是 `f16/f32 ÷ f16/f16 = 181.3 / 180.9 = 1.002`（stock 是 0.50）。跑了四次，
+`f16/f16` 分别落在 180.6–183.8，每次比值都在 1.00 上下（这个量级的波动是频率，
+不是门）。同一次开机的 `fp8_mma_bench` 给 `e4m3/f32 = 360.33`（285 W 那次是
+319.58，[results/fp8-unlocked-320w-run0013.txt](results/fp8-unlocked-320w-run0013.txt)）。`gemm_check`
+六组全部 `failures=0 max_abs=0`（[results/gemm-check-320w-run0013.txt](results/gemm-check-320w-run0013.txt)）。
 
 | 模式 | 解锁后 |
 |---|---:|
@@ -207,7 +226,7 @@ DLSS on : 126.22 FPS  -> 126.48 FPS     +0.21%
 | CPU | AMD Ryzen 7 5700X3D（无核显） |
 | OS | Windows 11 专业工作站版 `10.0.26300` Build 26300，Secure Boot 关闭 |
 | PCI | `0000:08:00.0`，BAR0 `0xFB000000` (16 MiB)，BAR1 16 GiB（Re-BAR 开） |
-| 功耗 / 频率 | 出厂 285 W，本文所有算力数字都在 285 W 下采集。之后给功率表挂了一份 320 W 的 VBIOS override（[PITFALLS #13](docs/PITFALLS.md)），当前跑在 320 W。`clocks.max.sm` 3165 MHz，PCIe Gen4 ×16 |
+| 功耗 / 频率 | 出厂 285 W；「结果」表里那些 285 W 数字是在 285 W 下采的。后来给功率表挂了一份 320 W 的 VBIOS override（[PITFALLS #13](docs/PITFALLS.md)），`RUN0013` 起跑在 320 W。`clocks.max.sm` 3165 MHz，PCIe Gen4 ×16 |
 
 ## 复现
 
@@ -309,15 +328,23 @@ windows\ad103-2705\rebuild-efi.ps1 -List
 ```
 
 本地七个提交的构建结果和「有没有上过机」都写在
-[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。一句话：**只有 `76FEE036`
-真正解锁过这块卡**（`RUN0005` 无 override、`RUN0006` 带 v1 override 都成功），
-其余每一版都还没上过机。
+[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。三次真正解锁过这块卡：`RUN0005`（无
+override，285 W）、`RUN0006`（v1 override）、以及 **`RUN0013`（2026-10-28 07:43，320 W override
+生效，当前 U 盘上的 `07052565`）**。
+
+两条路都能走，但只有一条能同时拿到 320 W：
+
+| 要哪个 | 用哪个 EFI | 注册表 override | 功率 |
+|---|---|---|---|
+| 只要解锁 | `76FEE036` | 必须卸掉 | 285 W |
+| 解锁 + 320 W | `07052565` 及以后 | 保留 | 320 W |
 
 换回 `76FEE036` 之前先看清楚它是什么：那一版**没有** blank 入口态这道闸门
-（二进制里搜不到 `blank selectors`，`wantSS1=` 还在）。也就是说，只有在注册表里
-没挂 VBIOS override 的时候它才能走到事务那一步；挂着 override 开机，它读到
-`SS0=0 SS1=0` 就会拒，和 `RUN0007` 到 `RUN0012` 那六次一样。要换回去就得同时
-把 override 卸掉，那是 285 W。
+（二进制里搜不到 `blank selectors`，`wantSS1=` 还在）。挂着 override 开机它读到
+`SS0=0 SS1=0` 就会拒，和 `RUN0007` 到 `RUN0012` 那六次一样。要用它就得同时把
+override 卸掉，那是 285 W。反过来，`07052565` 的闸门同时接受 stock `SS1==1` 与 blank 两种入口态；
+`test_efi_transaction` 里 30 个场景的三组 stock 变体都跑过，但这一版在**没挂
+override** 的机器上还没上过机。
 
 验证（benchmark 的 `.exe` 不进仓库，需要本机编）：
 
@@ -396,7 +423,7 @@ tools\verify-unlock.ps1; "exit=$LASTEXITCODE"
   同型号的 Linux 侧完整案例，FWSEC/SEC2 流程的交叉参考
 - [`Zagitta/gpu-unlock`](https://github.com/Zagitta/gpu-unlock)：机制的最初实现
 
-## 状态：U 盘手动引导路线已验证成功（2026-10-27 更新）
+## 状态：U 盘手动引导路线已验证成功（2026-10-28 更新）
 
 `RUN0005` 是**第一次由修好的版本跑通**：EFI 写寄存器 → FLR → 干净交棒给
 `bootmgfw.efi`，Windows 起来后立刻测到 `f16/f32 ÷ f16/f16 = 1.000`，对照组不动，
@@ -427,11 +454,20 @@ blank 过了又停 / 跳过 / 截断 / 什么都没匹配上），并对「事�
 装上去就卡在 boot 阶段，唯一存活线索是 `boot_io.c` 的 `Inspect()` 会拒绝第二个
 `MEDIA_HARDDRIVE_DP` 节点（已改，但从未在 ESP 路径上重测）。
 
-**和 320 W VBIOS override 的冲突**：用 `vbios-loader` 载入改过功率表的 VBIOS 之后，
-某些冷启动下 `0x82381c`/`0x823820` 读回 0，旧闸门要求 `SS1==1` 于是整条路被拒
-（六份日志 sha256 逐字节相同）。override 镜像里没有 SM 寄存器初值，所以冲突不在
-覆盖，而在初始化路径。现在入口接受两种状态：stock `SS1==1`、blank `SS0==SS1==0`，
-`test_efi_transaction` 的 30 个场景各跑 4 组 permutation 覆盖这两种。
+**320 W VBIOS override 与解锁现在不冲突了。** 用 `vbios-loader` 载入改过功率表的
+VBIOS 之后，某些冷启动下 `0x82381c`/`0x823820` 读回 0，旧闸门要求 `SS1==1`
+于是整条路被拒（六份日志 sha256 逐字节相同）。override 镜像里没有 SM
+寄存器初值，所以冲突不在覆盖，而在初始化路径。现在入口接受两种状态：
+stock `SS1==1`、blank `SS0==SS1==0`。
+
+`RUN0013`（2026-10-28 07:43）就是那次通过：`entry: plm=0xffffff8f ss0=0 ss1=0 wpr2_hi=0`，
+blank 闸门命中 9 次，`selector write: SS0=0x88888888` 与 `SS1=0x8` 各自 `matched=1`，
+post-FLR 读回 `SS0=88888888 SS1=00000008`，`Transaction result=0`。同一次开机
+`vbios-loader verify` 报 `state: override-active`、`match: true`、`first_difference: null`，
+`nvidia-smi` 报 `320/320/320 W`。**两件事同时生效。** 详见
+[PITFALLS #13](docs/PITFALLS.md) 末尾。
+
+`test_efi_transaction` 的 30 个场景各跑 4 组 permutation 覆盖这两种入口态。
 
 `app.c` 在驱动放开 GPU 之后、交棒之前还会再跑一次 `GuAd104ColdEntry()`。这条复检
 以前没有任何测试盖到：`test_app_flow` 把它桩成 `TRUE`，`test_msi_release` 桩成一个

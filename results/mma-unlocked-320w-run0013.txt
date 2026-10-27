@@ -1,0 +1,14 @@
+# RUN0013 verification - unlock with the 320 W VBIOS override actually active
+# captured 2026-10-28 07:48-07:51, boot 07:43:55, log H:\AD104-UNLOCK\RUN0013.TXT
+# EFI sha256 0705256564e57690ef51f282a81df99e9da5af411ae49b56fde110c6d99120c6 (106496 B, commit 517930f)
+# driver 621.01, VBIOS 95.03.45.40.c5, power limit 320 W, PCIe Gen4 x16
+# override: vbios-loader verify -> state=override-active match=true first_difference=null
+# Windows 11 10.0.26300, idle GPU, clocks_throttle_reasons 0x1 (gpu_idle only)
+# NVIDIA GeForce RTX 4070 Ti SUPER, 66 SMs, sm_89, iters=20000 reps=3
+mode       best TF/s   all runs
+f16/f16        180.9 170.7/179.4/180.9
+f16/f32        181.3 171.3/181.3/179.4
+bf16/f32       182.2 182.2/179.9/180.5
+s8/s32         367.8 360.3/367.8/361.1
+dp4a            89.8 89.7/89.7/89.8
+ffma            41.7 41.7/41.5/40.6

@@ -22,6 +22,9 @@ Get-Content SHA256SUMS | ForEach-Object {
 | `cublas-unlocked-run0005.txt` | `bench/cublas_gemm.cu` GEMM，N=8192 | `RUN0005` 那次开机；每用例带 `nonzero C` 校验行 |
 | `mma-unlocked-live.txt` / `fp8-unlocked-live.txt` / `cublas-unlocked-live.txt` | 同上三套 | 同一个 boot 内后来复测（卡跑在 2640 MHz） |
 | `cublas-contaminated.txt` | cuBLAS GEMM | **污染样本**：采集时 GPU 有其他负载，保留作为 `docs/PITFALLS.md` #11 的原始证据 |
+| mma-unlocked-320w-run0013.txt | `bench/mma_bench.cu` | **`RUN0013`（2026-10-28 07:43，320 W override 生效）**。四次之中的最后一次，`reps=3`；与 285 W 那批可直接对拍 |
+| fp8-unlocked-320w-run0013.txt | `bench/fp8_mma_bench.cu` | 同上那次开机，**issue rate**，不是 GEMM |
+| gemm-check-320w-run0013.txt | `bench/gemm_check.cu` | 同上那次开机的数值校验：六组 × 6144–65536 cells，全部 `failures=0 max_abs=0`；每行都带 `#` 头说明当时 EFI 与 override 状态 |
 | `mma-stock-after-poweroff.txt` / `fp8-stock-after-poweroff.txt` | 同上两套 | 10/27 09:33 采集。**断电一夜后第一次上电、没走 U 盘引导**，是易失性的对照组：确认 `SS0`/`SS1` 真的被断电清掉了 |
 
 `*run0005` 与 `*-live` 的 6 行 `#` 头里带 EFI 的 sha256、boot 时刻、日志路径。

@@ -245,8 +245,11 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 1 个 blank），共 120 条 `EFI integration` 行，`TEST_EXIT=0`。数条数而不是看日志文本，
 成功的 permutation 是静默的。
 
-**这一步只在离线仿真里过了，没有上硬件。** 真机上要冷启动一次才知道 blank 态到底
-能不能走完事务。
+**这一步已经在真机上过了。** `RUN0013`（2026-10-28 07:43）就是 blank 态走完事务的那一次：
+`entry: plm=0xffffff8f ss0=0 ss1=0 wpr2_hi=0`，`selector write: SS0=0x88888888` 与
+`SS1=0x8` 各自 `matched=1`，post-FLR 读回 `SS0=88888888 SS1=00000008`，
+`Transaction result=0`。同一次开机 `vbios-loader verify` 报 `state: override-active`、
+`match: true`，`nvidia-smi` 报 `320/320/320 W`。
 
 ### 哪一版 EFI 上过机（每次构建都能重算，不是回忆）
 
@@ -255,7 +258,7 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 
 | commit | 大小 | sha256 前 8 | 上过机吗 |
 |---|---|---|---|
-| `cb3691b` | 104448 | `76FEE036` | **是。`RUN0005` 解锁成功，`RUN0006`（v1 override）也成功** |
+| `cb3691b` | 104448 | `76FEE036` | **是。`RUN0005`（285 W）与 `RUN0006`（v1 override）都解锁成功** |
 | `c794f3e` | 104448 | `76FEE036` | 同上。这提交只改了 README，二进制没动 |
 | `cef0935` | 104960 | `EE440D7F` | 没上过。第一版接受 blank 入口态 |
 | `cdd55be` | 104960 | `EE440D7F` | 没上过。与 `cef0935` 同一份二进制 |
@@ -271,13 +274,14 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 | `e3da9f9` | 105472 | `8BEEE6FE` | 没上过。`GuAd104Prepare()` 里最后一处静默拒绝（`GuLatchEntrySelectors()`）也报名字了 |
 | `baf9649` | 105984 | `DDE1A608` | 没上过。`GuFlr()` 里 reset 前那个五合一静默拒绝也报名字了 |
 | `c0b470a` | 106496 | `208CDD40` | 没上过。`check_entry_selectors()` 在事务内部也报名字了 |
+| `517930f` | 106496 | `07052565` | **是。`RUN0013` 解锁成功，320 W override 同时生效**。`GuSelectorPhase()` 三闸各自报名字（多了三条串，但产物长度没变）|
 
-**只有 `76FEE036` 真正解锁过这块卡。** 从 `cef0935` 往后每一版都没上过机，
-所以「能解锁的那版」和「肯接受 320 W override 留下的 blank 态的那版」之间，
-只隔一个提交：`c794f3e` → `cef0935`。
+**两版真正解锁过这块卡：`76FEE036`（两次）和 `07052565`（`RUN0013`）。** 后者是唯一能在
+320 W override 生效时走完事务的版本；前者挂着 override 会被
+`cold-profile selector mismatch` 拦在准备阶段。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `208CDD40`（106496 B）。从 `250C7EA1` 往后这四版的改动
-都只影响被拒时屏上有几个字，不影响放行时的行为：
+`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `07052565`（106496 B），已经跑过 `RUN0013`。从 `250C7EA1`
+往后这五版的改动都只影响被拒时屏上有几个字，不影响放行时的行为：
 
 - `GuAd104Prepare()` 把十一个检查从两个状态码里拆出来，每一处各打一行
   `cold-prepare: ...`，末尾那一处 `GuLatchEntrySelectors()` 也一样。它拒的是
@@ -297,13 +301,13 @@ blank 是 `SS0==0 && SS1==0`。改动落在
   `selector phase rejected:`，最后一条带 `SS0` / `SS1` / `entry` 三个值。这一条很关键：
   入口时 `SS0=0` 与写完乘以后又读回 `SS0=0` 是两个不同的问题。
 
-`RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
-`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`；`DDE1A608`、`8BEEE6FE`、`75314A88`、`250C7EA1`
-分别留作 `BOOTX64.EFI.bak-20261028-072818`、`BOOTX64.EFI.bak-20261028-071718`、
-`BOOTX64.EFI.bak-20261028-070815`、`BOOTX64.EFI.bak-20261028-065815`，
-`BFC70FF1` 那份留作 `BOOTX64.EFI.bak-20261028-064335`。
+`RUN0013` 是这一版的第一次硬件尝试，也是第一次就成功。`76FEE036` 那份同时留在
+`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`；`DDE1A608`、`8BEEE6FE`、`75314A88`、`250C7EA1`、
+`208CDD40` 分别留作 `BOOTX64.EFI.bak-20261028-072818`、`BOOTX64.EFI.bak-20261028-071718`、
+`BOOTX64.EFI.bak-20261028-070815`、`BOOTX64.EFI.bak-20261028-065815`、
+`BOOTX64.EFI.bak-20261028-073748`，`BFC70FF1` 那份留作 `BOOTX64.EFI.bak-20261028-064335`。
 
-它随时能换回去，但换回去之后只有一种情况能用：注册表里没挂 VBIOS override。
+换回去也能用，但只在注册表里没挂 VBIOS override 的时候，那就是 285 W。
 `76FEE036` 的二进制里没有 blank 入口态那道闸门（搜 `blank selectors` 命中 0，
 搜 `wantSS1=` 命中 1），所以挂着 320 W override 开机时，它读到 `SS0=0 SS1=0` 一样会拒，
 结果就是 `RUN0007`..`RUN0012` 那六份 285 字节的日志。也就是说「换回能解锁的那版」
