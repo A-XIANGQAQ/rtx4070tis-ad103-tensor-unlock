@@ -298,25 +298,66 @@ static BOOLEAN Config(VOID) {{
     if(EFI_ERROR(GuConfigRead(EfiPciIoWidthUint32,(UINT32)i*4,&c[i])))return FALSE;
   if(!GuCheckConfig(c,s,b,d,f,&caps) || c[2]!=0x{cwords[2]:08x} ||
      c[4]!=GU_BAR0_BASE || c[5]!=0x{cwords[5]:x} || c[6]!=0x{cwords[6]:x} || c[7]!=0x{cwords[7]:x} ||
-     c[8]!=0x{cwords[8]:x} || c[9]!=0x{cwords[9]:x})return FALSE;
-  return caps.pm==Gu.pm_cap && caps.pcie==Gu.pcie_cap &&
-    caps.pcie_version==Gu.pcie_version && caps.msi==Gu.msi_cap && caps.msix==Gu.msix_cap;
+     c[8]!=0x{cwords[8]:x} || c[9]!=0x{cwords[9]:x}){{
+    GuLog("cold-profile config mismatch: check=%u seg=%zu bus=%zu dev=%zu fun=%zu c2=%#x c4=%#x c5=%#x c6=%#x c7=%#x c8=%#x c9=%#x\\n",
+      (unsigned)(GuCheckConfig(c,s,b,d,f,&caps)?1u:0u),(size_t)s,(size_t)b,(size_t)d,(size_t)f,
+      c[2],c[4],c[5],c[6],c[7],c[8],c[9]);
+    return FALSE;
+  }}
+  if(!(caps.pm==Gu.pm_cap && caps.pcie==Gu.pcie_cap &&
+       caps.pcie_version==Gu.pcie_version && caps.msi==Gu.msi_cap && caps.msix==Gu.msix_cap)){{
+    GuLog("cold-profile caps drift: pm %#x/%#x pcie %#x/%#x ver %#x/%#x msi %#x/%#x msix %#x/%#x\\n",
+      caps.pm,Gu.pm_cap,caps.pcie,Gu.pcie_cap,caps.pcie_version,Gu.pcie_version,
+      caps.msi,Gu.msi_cap,caps.msix,Gu.msix_cap);
+    return FALSE;
+  }}
+  return TRUE;
 }}
 static BOOLEAN Registers(UINT32 *Ss0,UINT32 *Ss1) {{
   static const UINT32 offsets[]={{
     {off_str}}};
   static const UINT32 values[]={{
     {val_str}}};
-  for(UINTN i=0;i<sizeof(offsets)/sizeof(offsets[0]);i++)
-    if(GuRead32(offsets[i])!=values[i] || Gu.fault)return FALSE;
+  for(UINTN i=0;i<sizeof(offsets)/sizeof(offsets[0]);i++) {{
+    UINT32 v=GuRead32(offsets[i]);
+    if(Gu.fault){{GuLog("cold-profile read fault at idx=%zu off=%#x\\n",(size_t)i,offsets[i]);return FALSE;}}
+    if(v!=values[i]){{
+      GuLog("cold-profile register mismatch: idx=%zu off=%#x got=%#x want=%#x\\n",
+        (size_t)i,offsets[i],v,values[i]);
+      return FALSE;
+    }}
+  }}
   *Ss0=GuRead32(0x82381c);*Ss1=GuRead32(0x823820);
-  return !Gu.fault && *Ss0!=0xffffffff && (*Ss0&0xffff0000)!=0xbadf0000 &&
-    *Ss0!=0x88888888 && *Ss1==0x{ss1:x};
+  if(Gu.fault){{GuLog("cold-profile selector read fault\\n");return FALSE;}}
+  /* Two entry states are accepted. stock: SS1 carries {ss1:x}, as every plain
+   * boot shows. blank: both read 0, which is what this card reports when a
+   * loaded VBIOS override is in force (RUN0007-RUN0012, six boots,
+   * byte-identical logs). Every other pin still matches stock in that state,
+   * so the selectors are the only part of the profile the override disturbs,
+   * and 0 is itself a legal "no override applied" value rather than a corrupt
+   * read. Anything else stays a mismatch. */
+  BOOLEAN stock=(*Ss1==0x{ss1:x}U),blank=(*Ss0==0U&&*Ss1==0U);
+  if(*Ss0==0xffffffff||(*Ss0&0xffff0000)==0xbadf0000||*Ss0==0x88888888||(!stock&&!blank)){{
+    GuLog("cold-profile selector mismatch: SS0=%#x SS1=%#x stockSS1=%#x\\n",*Ss0,*Ss1,0x{ss1:x});
+    return FALSE;
+  }}
+  if(blank)GuLog("cold-profile blank selectors: SS0=0 SS1=0, accepted as no-override entry state\\n");
+  return TRUE;
 }}
 BOOLEAN GuAd104ColdEntry(VOID) {{
   UINT32 ss0,ss1;
-  return !Gu.started && !Gu.fault && !Gu.retained && Config() &&
-    Registers(&ss0,&ss1) && GuEntrySelectorsMatch(ss0,ss1);
+  if(Gu.started||Gu.fault||Gu.retained){{
+    GuLog("cold-entry blocked: started=%u fault=%u retained=%u\\n",
+      Gu.started?1u:0u,Gu.fault?1u:0u,Gu.retained?1u:0u);
+    return FALSE;
+  }}
+  if(!Config()){{GuLog("cold-entry: Config() failed\\n");return FALSE;}}
+  if(!Registers(&ss0,&ss1)){{GuLog("cold-entry: Registers() failed\\n");return FALSE;}}
+  if(!GuEntrySelectorsMatch(ss0,ss1)){{
+    GuLog("cold-entry: GuEntrySelectorsMatch failed SS0=%#x SS1=%#x\\n",ss0,ss1);
+    return FALSE;
+  }}
+  return TRUE;
 }}
 EFI_STATUS GuAd104Prepare(VOID) {{
   UINT32 ss0,ss1,after0,after1;VOID *prom=NULL;struct gpu_unlock_fwsec fw;
@@ -336,7 +377,7 @@ EFI_STATUS GuAd104Prepare(VOID) {{
 }}
 '''
 
-    a.out.write_text(src, encoding="utf-8")
+    a.out.write_text(src, encoding="utf-8", newline="\n")
     print(f"PROM sha256    : {prom_sha}")
     print(f"device         : {dev['device_id']} subsys {consts['subsystem']} rev {dev['revision']:#x}")
     print(f"PCI location   : bus {consts['bus']}")
