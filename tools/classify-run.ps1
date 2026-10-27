@@ -30,6 +30,9 @@ function Classify($item) {
   $entryRefused  = @($lines | Where-Object { $_ -match 'cold-profile selector mismatch' })
   $pinRefused    = @($lines | Where-Object { $_ -match 'cold-profile register mismatch' })
   $stop          = @($lines | Where-Object { $_ -match '^STOP: stage=' })
+  # app.c split one ambiguous label into two after the driver let go, so the stage
+  # name alone now says which refusal it was.
+  $stopStage     = if ($stop.Count -gt 0) { $stop[-1] -replace '^STOP: stage=([^ ]+).*','$1' } else { '' }
   $txResult      = @($lines | Where-Object { $_ -match '^Transaction result=' })
   $entry         = @($lines | Where-Object { $_ -match '^entry: plm=' })
   $handoff       = @($lines | Where-Object { $_ -match 'handoff check passed' })
@@ -53,7 +56,12 @@ function Classify($item) {
   } elseif ($entryRefused.Count -gt 0) {
     $verdict = 'ENTRY-REFUSED-SELECTOR'
     $why     = 'selectors did not match an accepted entry state'
-  } elseif ($coldRefused.Count -gt 0) {
+  } elseif ($stopStage -eq 'release-not-held') {
+    # The claim did not stay held after the release, so the run never reached the
+    # transaction. Nothing about the card changed; this is a host-side refusal.
+    $verdict = 'CLAIM-NOT-HELD'
+    $why     = 'the exclusive claim was not held after the driver let go, so nothing ran'
+  } elseif ($stopStage -eq 'post-release-gate' -or $coldRefused.Count -gt 0) {
     # The first gate passed (otherwise this would read entry-refused) and the run
     # got as far as releasing the GPU, then the same check failed. The message
     # names which sub-check gave way: blocked/Config()/Registers()/selectors.
@@ -88,6 +96,7 @@ function Classify($item) {
   if ($bootmgr.Count   -gt 0) { "bootmgr   : " + ($bootmgr[-1] -replace '^bootmgfw: ','') }
   if ($blankAccepted.Count -gt 0) { "blank     : accepted $($blankAccepted.Count)x" }
   if ($coldRefused.Count   -gt 0) { "gate      : " + ($coldRefused[-1]) }
+  if ($stopStage) { "refusedAt : " + $stopStage }
   if ($txResult.Count  -gt 0) { "tx        : " + ($txResult[-1] -replace '^Transaction result: ','') }
   if ($handoff.Count   -gt 0) { "handoffChk: checked" }
   if ($residual.Count  -gt 0) { "residual  : " + ($residual[-1] -replace '^release: residual edges on GPU handles=','') }

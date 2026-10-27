@@ -181,8 +181,8 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 
 注：这台机器的 ESP 是 disk 3 分区 1，300 MB。`Inspect()` 的多盘容忍和上面三个
 bug 的修复在同一个 EFI 里。`H:\EFI\BOOT\BOOTX64.EFI` 现在是 104448 B /
-`9092110a…`（blank 入口态 + `Sealed` 复位 + 撤掉移植期的图抖动容忍），上一版
-104960 B / `64d70365…` 留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；
+`bfc70ff1…`（blank 入口态 + `Sealed` 复位 + 撤掉移植期的图抖动容忍 + release 后两种
+拒绝分开命名），上一版 104960 B / `64d70365…` 留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；
 只有回头试 ESP 时才用得上。
 
 ## 320 W VBIOS override 与 SM 解锁的冲突（改在解锁侧，未上硬件）
@@ -248,14 +248,17 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 | `6a82336` | 104448 | `950689CB` | 没上过。撤掉九处图抖动容忍 |
 | `6adb3ee` | 104448 | `AFB6524A` | 没上过。改掉 blank 那句注释的措辞 |
 | `e2e99c2` .. `a96c26a` | 104448 | `AFB6524A` | 没上过。四个提交只动 rebuild-efi.ps1 与两个测试文件，产物没变 |
-| `68ee8c9` .. `1ecaf35` | 104448 | `9092110A` | 没上过。`boot_io.c` 那句话改成不声称 pin，产物跟着变 |
+| `68ee8c9` | 104448 | `9092110A` | 没上过。`boot_io.c` 那句话改成不声称 pin，产物跟着变 |
+| `1ecaf35` | 104448 | `9092110A` | 没上过。只动了 rebuild-efi.ps1 |
+| `dcda05c` .. `c80b09f` | 104448 | `BFC70FF1` | 没上过。`app.c` 里 release 之后两种拒绝拆成两个 stage，`app.c` 是编进镜像的 |
 
 **只有 `76FEE036` 真正解锁过这块卡。** 从 `cef0935` 往后每一版都没上过机，
 所以「能解锁的那版」和「肯接受 320 W override 留下的 blank 态的那版」之间，
 只隔一个提交：`c794f3e` → `cef0935`。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `9092110A`（含 blank 入口态；与 `AFB6524A` 的差别
-只有 `Windows image staged` 那句日志不再声称 pin 了摘要）。
+`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `BFC70FF1`（含 blank 入口态；与 `9092110A` 的差别
+是 release 之后那两种拒绝各有一个 stage 名，与 `AFB6524A` 的差别再加上
+`Windows image staged` 那句日志不再声称 pin 了摘要）。
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
 `H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，任何时候都能换回去。
 
@@ -270,9 +273,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给九种判决。四种在真实日志上出现过，其余五种只有合成样例（`blank` 那两种要等
-`RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`GATE-REFUSED-AFTER-RELEASE` 与
-`TRUNCATED` 至今没在真机上出现过）：
+它给十种判决。四种在真实日志上出现过，其余六种只有合成样例（`blank` 那两种要等
+`RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`GATE-REFUSED-AFTER-RELEASE`、
+`CLAIM-NOT-HELD` 与 `TRUNCATED` 至今没在真机上出现过）：
 
 | 判决 | 含义 | 出处 |
 |---|---|---|
@@ -283,6 +286,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 | `BLANK-ACCEPTED-THEN-STOP` | blank 态过了，后面某段 `STOP` | 合成样例 |
 | `BLANK-ACCEPTED` | blank 态过了，没有 `STOP` | 合成样例 |
 | `ENTRY-REFUSED-PIN` | 19 个 pin 里有一个不对，没走到选通器 | 合成样例 |
+| `CLAIM-NOT-HELD` | 驱动放开 GPU 之后独占声明没拿住，事务一次都没跑 | 合成样例 |
 | `GATE-REFUSED-AFTER-RELEASE` | 入口闸门在驱动放开 GPU 之后又跑了一次并拒绝 | 合成样例 |
 | `TRUNCATED` | 日志三行以内，任何闸门都没来得及报 | 合成样例 |
 
@@ -293,9 +297,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 如果停在 `blank selectors` 之后，说明被拒的位置在 `unlock_610.c` 的主闸门或更后面，
 `STOP:` 行里的 `stage=` 会指明是哪一段。
 
-`GATE-REFUSED-AFTER-RELEASE` 是另一回事：日志里出现 `cold-entry ...` 就说明卡在
-`app.c:58` 那次复检上，此时驱动已经解绑、GPU 已经声明独占，所以它不会去启动 Windows。
-日志的 `gate :` 行会带上具体是哪一项没过（`blocked` / `Config()` / `Registers()` /
+`CLAIM-NOT-HELD` 与 `GATE-REFUSED-AFTER-RELEASE` 都发生在驱动解绑之后、事务之前，
+所以都不会去启动 Windows；区别在拒绝发生在哪一步。前者是 `GuMsiReleased()` 报 false，
+即独占声明没拿住；后者是日志里出现 `cold-entry ...`，即入口闸门复检没过。这两种拒绝
+以前共用 `stage=MSI-release` 这个标签，与 `GuMsiRelease()` 本身同名，`STOP` 行读不出
+是哪一种——`app.c` 现在把它们拆成 `release-not-held` 与 `post-release-gate`，
+`refusedAt :` 那一行直接给出 stage 名。
+
+`gate :` 行只在后者出现，带上具体是哪一项没过（`blocked` / `Config()` / `Registers()` /
 `GuEntrySelectorsMatch`），四种原因的处置完全不同：`blocked` 看 `started/fault/retained`，
 `Registers()` 是 19 个 pin 不对，`GuEntrySelectorsMatch` 是选通器在 release 之后变了。
 

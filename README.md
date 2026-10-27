@@ -328,9 +328,9 @@ A 和 C 都有直接判据：`RUN0005` 日志里 `preflight[6b] CacheGpuChildren
 一条都没有。B 只验证了不会误触发，它的用处是下次被拒时能看见原因。
 
 判读日志用 `tools\classify-run.ps1`：不给参数就取最新那份，`-All` 把历史上每一轮
-压成一行。它把九种结局分开（事务跑完 / 事务成功但随后 halt / pin 拒 / 选通器拒 /
-驱动解绑后复检又拒 / blank 过了 / blank 过了又停 / 跳过 / 截断），并对「事务跑完」那种
-额外打印日志写完到下一个 Windows 启动事件的秒数。`RUN0004` 就是靠这个看出问题的：
+压成一行。它把十种结局分开（事务跑完 / 事务成功但随后 halt / pin 拒 / 选通器拒 /
+驱动解绑后独占声明没拿住 / 驱动解绑后复检又拒 / blank 过了 / blank 过了又停 /
+跳过 / 截断），并对「事务跑完」那种额外打印日志写完到下一个 Windows 启动事件的秒数。`RUN0004` 就是靠这个看出问题的：
 硬件状态已经写进去了，但 EFI 干等 144 秒没交棒，最后被按了重启键，于是那次成功白丢。
 
 **没做的**：ESP 接管那条仍然未验证通过（事故与恢复路线见
@@ -349,13 +349,15 @@ A 和 C 都有直接判据：`RUN0005` 日志里 `preflight[6b] CacheGpuChildren
 变量，`test_efi_transaction` 只调 `GuAd104Prepare()`。现在两处都补上了：
 `test_efi_transaction` 在 `Prepare()` 之后紧接着调它，四种 permutation 都会跑到；
 `test_app_flow` 的 case 13 在 release 之后让它返回 `FALSE`，断言此时必须 halt、
-绝不启动 Windows。**改动未上硬件验证。**
+绝不启动 Windows；case 14 走另一条：release 报告成功但独占声明其实没拿住，断言日志
+写下的是另一个 stage 名。这两种拒绝以前共用 `stage=MSI-release` 这个标签，与
+`GuMsiRelease()` 本身同名，日志读不出是哪一种。**改动未上硬件验证。**
 
 五个测试套件现在都在这个端口上跑得起来，全部返回 0：
 
 | 套件 | 规模 | 之前为什么跑不了 |
 |---|---|---|
-| `test_app_flow` | 291 checks / 16 scenarios | — |
+| `test_app_flow` | 313 checks / 17 scenarios | — |
 | `test_guards` | 17 admission cases | 两处 device id 写的是上游 AD104 的 `0x2782` |
 | `test_efi_transaction` | 120 scenarios（30 × 4 permutation） | 配置空间、寄存器初值、FWSEC 几何、WPR2 桩全是上游卡的常量 |
 | `test_boot_io` | 718 checks / 18 cases | pin 了上游 3086728 字节的 bootmgr，这台是 3086680 |

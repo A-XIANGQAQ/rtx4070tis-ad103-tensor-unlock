@@ -852,8 +852,9 @@ Copy-Item G:\workspace\vbios-4070tis\vbios-loader.exe "$env:TEMP\v.exe" -Force
 | 七行（自然换行） | 7 | `C1AF0E57` |
 | 五行（重新折行，意思不变） | 5 | `AFB6524A` |
 
-`AFB6524A` 正是 U 盘上那份。把改动 stash 掉重编也是 `AFB6524A`，
-所以构建本身是确定性的，不是随机。
+`AFB6524A` 从 `6adb3ee` 一直用到 `a96c26a`（U 盘上挂过一阵）。把改动 stash 掉
+重编也是 `AFB6524A`，所以构建本身是确定性的，不是随机。这张表不是「当前哪一版」
+的答案：`app.c` 一改，产物照样会变，那一版是 `BFC70FF1`（`dcda05c`）。
 
 **判据**：遇到「纯文本改动却换了哈希」，先数一下改动位置到文件末尾之间有多少
 `GU_RESULT`（或任何带 `__LINE__` / `__FILE__` 的宏，`diagnostic.h:23` 的
@@ -863,4 +864,6 @@ Copy-Item G:\workspace\vbios-4070tis\vbios-loader.exe "$env:TEMP\v.exe" -Force
 `rebuild-efi.ps1` 的 `$Known` 表里登记新值。不要为了「让哈希回到原值」去删注释内容。
 
 **副作用**：`rebuild-efi.ps1` 的表里 `6adb3ee` 与 `e2e99c2` 是同一份二进制
-（`AFB6524A`），因为后者只动了注释且保持五行。
+（`AFB6524A`），因为后者只动了注释且保持五行。反过来，`dcda05c` 只改了几行 `stage`
+名字，产物却变了——因为 `app.c` 是编进镜像的，不是注释。分辨方法是看改的是注释还是
+代码，不是看改动大小。
