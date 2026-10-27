@@ -267,16 +267,19 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 | `68ee8c9` | 104448 | `9092110A` | 没上过。`boot_io.c` 那句话改成不声称 pin，产物跟着变 |
 | `1ecaf35` | 104448 | `9092110A` | 没上过。只动了 rebuild-efi.ps1 |
 | `dcda05c` .. `c80b09f` | 104448 | `BFC70FF1` | 没上过。`app.c` 里 release 之后两种拒绝拆成两个 stage，`app.c` 是编进镜像的 |
+| `1fd73d4` | 105472 | `250C7EA1` | 没上过。`GuAd104Prepare()` 里十一处静默拒绝各自命名，镜像因此长了约 1 KiB |
 
 **只有 `76FEE036` 真正解锁过这块卡。** 从 `cef0935` 往后每一版都没上过机，
 所以「能解锁的那版」和「肯接受 320 W override 留下的 blank 态的那版」之间，
 只隔一个提交：`c794f3e` → `cef0935`。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `BFC70FF1`（含 blank 入口态；与 `9092110A` 的差别
-是 release 之后那两种拒绝各有一个 stage 名，与 `AFB6524A` 的差别再加上
-`Windows image staged` 那句日志不再声称 pin 了摘要）。
+`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `250C7EA1`（105472 B）。这一版与 `BFC70FF1`
+的差别只有一处：`GuAd104Prepare()` 原来把十一个检查折进 `EFI_NOT_READY` 和
+`EFI_COMPROMISED_DATA` 两个状态码里且大部分不打日志，现在每一处各打一行
+`cold-prepare: ...`。这个改动只影响被拒时屏上有几个字，不影响放行时的行为。
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
-`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`。
+`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，上一版 `BFC70FF1` 留作
+`H:\EFI\BOOT\BOOTX64.EFI.bak-20261028-064335`。
 
 它随时能换回去，但换回去之后只有一种情况能用：注册表里没挂 VBIOS override。
 `76FEE036` 的二进制里没有 blank 入口态那道闸门（搜 `blank selectors` 命中 0，
