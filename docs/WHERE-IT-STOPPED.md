@@ -375,7 +375,7 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
 - `windows/ad103-2705` 分支：`https://github.com/A-XIANGQAQ/gpu-unlock-ada/tree/ad103-2705/windows/ad103-2705`
   基于上游 `4e7fefc`；三个 bug 的修复在 `cb3691b`，`c794f3e` 只改文档，
   `6a82336` 恢复九处图检查的硬失败并加 blank 入口态
-- 本仓库 `docs/PITFALLS.md`：18 条，每条「症状 → 原因 → 改法」。移植阻塞点之外
+- 本仓库 `docs/PITFALLS.md`：19 条，每条「症状 → 原因 → 改法」。移植阻塞点之外
   还有 4 个「拆完之后还要验证」的坑（6b 身份要缓存、10b 停机要可见、10c 关日志≠故障、
   10d `%p` 会静默整份日志）、#12 cuBLAS alpha 宽度、#13 override 让 SS0/SS1 读 0、
   #14 `Sealed` 从不复位、#15 为绕过 `GpuChild()` 而放宽的图检查、

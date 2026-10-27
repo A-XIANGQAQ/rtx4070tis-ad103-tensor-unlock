@@ -880,3 +880,27 @@ Copy-Item G:\workspace\vbios-4070tis\vbios-loader.exe "$env:TEMP\v.exe" -Force
 （`AFB6524A`），因为后者只动了注释且保持五行。反过来，`dcda05c` 只改了几行 `stage`
 名字，产物却变了——因为 `app.c` 是编进镜像的，不是注释。分辨方法是看改的是注释还是
 代码，不是看改动大小。
+
+## 19. 这台机器上 `bootmgfw.efi` 有两个，长度不一样
+
+`C:\Windows\Boot\EFI\bootmgfw.efi` 是 **3086848 B / `3f8a4cbb…`**，
+`C:\Windows\Boot\EFI_EX\bootmgfw_EX.efi` 是 **3086680 B / `2d60a220…`**，两份差 168 字节
+（前 3077391 字节相同）。EFI 从 ESP 上读到的是后者 —— `RUN0005` / `RUN0006` 里那行
+`bootmgfw: size=3086680 sha256=2d60a220…` 与 `EFI_EX` 那份逐字节相等。
+
+所以「这台机器的 stock bootmgr 是哪个」有两个答案，取决于问的是磁盘上哪一份：
+
+- `tools/install-esp.ps1` 的 pin（`:52-53` `3086680` / `2d60a220…`）取的是 **ESP 上那份**，
+  这是对的：它在覆盖 ESP 上的文件，要认的就是 ESP 上的原件
+- `repo-ad103\README.md` 复现节给 `patch-target.py` 的 `--bootmgr-size 3086680`
+  `--bootmgr-sha 2d60a220…` 也是这个值，同样对得上
+- `test_boot_io` 拿 `EFI_EX\bootmgfw_EX.efi` 当输入文件，也是这个值
+
+三者一致，没有矛盾。容易踩的地方是去 `C:\Windows\Boot\EFI\` 那看，那份长度不同；
+照着它改 pin 会让 `install-esp.ps1` 在「current bootmgfw is NOT the expected stock file」
+上停下来，而这台机器的 ESP 上那份其实就是好的。
+
+`_EX` 不是这个端口搞出来的：`C:\Windows\Boot` 下成对存在 `DVD` / `DVD_EX`、
+`EFI` / `EFI_EX`、`Fonts` / `Fonts_EX`，三对的创建时间都是 2024/4/1 15:26:06。
+这两份 bootmgfw 也不是同一份的两个投影，差 168 字节。所以「找 bootmgfw」在这台机器上
+有两个答案，选哪个看你要对谁动手 —— 要改 ESP，就认 ESP 上那份。
