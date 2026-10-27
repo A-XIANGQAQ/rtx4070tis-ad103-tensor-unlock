@@ -24,6 +24,9 @@ function Classify($item) {
   $text  = $lines -join "`n"
 
   $blankAccepted = @($lines | Where-Object { $_ -match 'cold-profile blank selectors' })
+  # app.c runs the entry gate a second time after GuMsiRelease. A refusal there
+  # is worse than the first one: the drivers are already detached.
+  $coldRefused   = @($lines | Where-Object { $_ -match '^cold-entry' })
   $entryRefused  = @($lines | Where-Object { $_ -match 'cold-profile selector mismatch' })
   $pinRefused    = @($lines | Where-Object { $_ -match 'cold-profile register mismatch' })
   $stop          = @($lines | Where-Object { $_ -match '^STOP: stage=' })
@@ -50,6 +53,12 @@ function Classify($item) {
   } elseif ($entryRefused.Count -gt 0) {
     $verdict = 'ENTRY-REFUSED-SELECTOR'
     $why     = 'selectors did not match an accepted entry state'
+  } elseif ($coldRefused.Count -gt 0) {
+    # The first gate passed (otherwise this would read entry-refused) and the run
+    # got as far as releasing the GPU, then the same check failed. The message
+    # names which sub-check gave way: blocked/Config()/Registers()/selectors.
+    $verdict = 'GATE-REFUSED-AFTER-RELEASE'
+    $why     = 'the entry gate refused a second time, after the driver let go of the GPU'
   } elseif ($blankAccepted.Count -gt 0 -and $stop.Count -gt 0) {
     # The interesting case: the new gate let the run through, and something after
     # it gave up. The stop line says which stage, so read that before changing code.
@@ -78,6 +87,7 @@ function Classify($item) {
   if ($entry.Count     -gt 0) { "entry     : " + ($entry[-1] -replace '^entry: ','') }
   if ($bootmgr.Count   -gt 0) { "bootmgr   : " + ($bootmgr[-1] -replace '^bootmgfw: ','') }
   if ($blankAccepted.Count -gt 0) { "blank     : accepted $($blankAccepted.Count)x" }
+  if ($coldRefused.Count   -gt 0) { "gate      : " + ($coldRefused[-1]) }
   if ($txResult.Count  -gt 0) { "tx        : " + ($txResult[-1] -replace '^Transaction result: ','') }
   if ($handoff.Count   -gt 0) { "handoffChk: checked" }
   if ($residual.Count  -gt 0) { "residual  : " + ($residual[-1] -replace '^release: residual edges on GPU handles=','') }

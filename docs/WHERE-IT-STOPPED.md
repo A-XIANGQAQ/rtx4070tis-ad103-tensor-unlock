@@ -264,8 +264,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给八种判决。四种在真实日志上出现过，其余四种只有合成样例（`blank` 那两种要等
-`RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN` 与 `TRUNCATED` 至今没在真机上出现过）：
+它给九种判决。四种在真实日志上出现过，其余五种只有合成样例（`blank` 那两种要等
+`RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`GATE-REFUSED-AFTER-RELEASE` 与
+`TRUNCATED` 至今没在真机上出现过）：
 
 | 判决 | 含义 | 出处 |
 |---|---|---|
@@ -276,6 +277,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 | `BLANK-ACCEPTED-THEN-STOP` | blank 态过了，后面某段 `STOP` | 合成样例 |
 | `BLANK-ACCEPTED` | blank 态过了，没有 `STOP` | 合成样例 |
 | `ENTRY-REFUSED-PIN` | 19 个 pin 里有一个不对，没走到选通器 | 合成样例 |
+| `GATE-REFUSED-AFTER-RELEASE` | 入口闸门在驱动放开 GPU 之后又跑了一次并拒绝 | 合成样例 |
 | `TRUNCATED` | 日志三行以内，任何闸门都没来得及报 | 合成样例 |
 
 对 `TRANSACTION-COMPLETE` 它还会打 `nextBoot`：日志写完到下一个 Windows 启动事件的秒数。
@@ -284,6 +286,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 
 如果停在 `blank selectors` 之后，说明被拒的位置在 `unlock_610.c` 的主闸门或更后面，
 `STOP:` 行里的 `stage=` 会指明是哪一段。
+
+`GATE-REFUSED-AFTER-RELEASE` 是另一回事：日志里出现 `cold-entry ...` 就说明卡在
+`app.c:58` 那次复检上，此时驱动已经解绑、GPU 已经声明独占，所以它不会去启动 Windows。
+日志的 `gate :` 行会带上具体是哪一项没过（`blocked` / `Config()` / `Registers()` /
+`GuEntrySelectorsMatch`），四种原因的处置完全不同：`blocked` 看 `started/fault/retained`，
+`Registers()` 是 19 个 pin 不对，`GuEntrySelectorsMatch` 是选通器在 release 之后变了。
 
 ## 开机后怎么确认（照这个做）
 
