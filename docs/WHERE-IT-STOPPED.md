@@ -285,9 +285,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给十一种判决。五种在真实日志上出现过，其余六种只有合成样例（`blank` 那两种要等
-`RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`GATE-REFUSED-AFTER-RELEASE`、
-`CLAIM-NOT-HELD` 与 `TRUNCATED` 至今没在真机上出现过）：
+它给十二种判决（不含 `UNKNOWN` 那个占位），下表是全部十二种。四种在真实日志上出现过，
+其余只有合成样例（`blank` 那两种要等
+`RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`ENTRY-REFUSED-NEITHER-STATE`、
+`GATE-REFUSED-AFTER-RELEASE`、`CLAIM-NOT-HELD` 与 `TRUNCATED` 至今没在真机上出现过）：
 
 | 判决 | 含义 | 出处 |
 |---|---|---|
@@ -302,6 +303,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 | `CLAIM-NOT-HELD` | 驱动放开 GPU 之后独占声明没拿住，事务一次都没跑 | 合成样例 |
 | `GATE-REFUSED-AFTER-RELEASE` | 入口闸门在驱动放开 GPU 之后又跑了一次并拒绝 | 合成样例 |
 | `TRUNCATED` | 日志三行以内，任何闸门都没来得及报 | 合成样例 |
+| `STOPPED` | 没有匹配上任何特征，只有兜底 | 合成样例 |
 
 对 `TRANSACTION-COMPLETE` 它还会打 `nextBoot`：日志写完到下一个 Windows 启动事件的秒数。
 `+3s` / `+4s` 是正常交棒；`RUN0004` 是 `+144s`，那 144 秒就是它拿着已经成功的硬件状态
