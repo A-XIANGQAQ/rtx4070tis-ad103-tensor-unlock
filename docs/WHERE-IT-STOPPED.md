@@ -175,10 +175,13 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 
 `c9f215d` 已改成接受多个 harddrive 节点（`hd>16` 为上界），并给 `GuBootOpen`
 的六个静默出口加了屏显。但这个改动从未在 ESP 路径上重测过，是假设，不是结论。
+`test_boot_io` 现在把两侧都钉住了：一个无关卷在前面时仍认出 Windows 卷，
+十六个 harddrive 节点仍放行，十七个被拒；六条拒绝串连同状态码逐字断言。
+不过这些是夹具，不是这台机器的固件枚举结果。
 
 注：这台机器的 ESP 是 disk 3 分区 1，300 MB。`Inspect()` 的多盘容忍和上面三个
 bug 的修复在同一个 EFI 里。`H:\EFI\BOOT\BOOTX64.EFI` 现在是 104448 B /
-`afb6524a…`（blank 入口态 + `Sealed` 复位 + 撤掉移植期的图抖动容忍），上一版
+`9092110a…`（blank 入口态 + `Sealed` 复位 + 撤掉移植期的图抖动容忍），上一版
 104960 B / `64d70365…` 留作 `BOOTX64.PREV.EFI`。走 U 盘这一路不需要 ESP 那部分；
 只有回头试 ESP 时才用得上。
 
@@ -245,12 +248,14 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 | `6a82336` | 104448 | `950689CB` | 没上过。撤掉九处图抖动容忍 |
 | `6adb3ee` | 104448 | `AFB6524A` | 没上过。改掉 blank 那句注释的措辞 |
 | `e2e99c2` .. `a96c26a` | 104448 | `AFB6524A` | 没上过。四个提交只动 rebuild-efi.ps1 与两个测试文件，产物没变 |
+| `68ee8c9` .. `1ecaf35` | 104448 | `9092110A` | 没上过。`boot_io.c` 那句话改成不声称 pin，产物跟着变 |
 
 **只有 `76FEE036` 真正解锁过这块卡。** 从 `cef0935` 往后每一版都没上过机，
 所以「能解锁的那版」和「肯接受 320 W override 留下的 blank 态的那版」之间，
 只隔一个提交：`c794f3e` → `cef0935`。
 
-`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `AFB6524A`（`6adb3ee` 起那一串提交共用的产物，含 blank 入口态）。
+`H:\EFI\BOOT\BOOTX64.EFI` 现在是 `9092110A`（含 blank 入口态；与 `AFB6524A` 的差别
+只有 `Windows image staged` 那句日志不再声称 pin 了摘要）。
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
 `H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，任何时候都能换回去。
 
