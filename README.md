@@ -342,7 +342,12 @@ blank 过了 / blank 过了又停 / 跳过 / 截断），并对「事务跑完�
 某些冷启动下 `0x82381c`/`0x823820` 读回 0，旧闸门要求 `SS1==1` 于是整条路被拒
 （六份日志 sha256 逐字节相同）。override 镜像里没有 SM 寄存器初值，所以冲突不在
 覆盖，而在初始化路径。现在入口接受两种状态：stock `SS1==1`、blank `SS0==SS1==0`，
-`test_efi_transaction` 的 30 个场景各跑 4 组 permutation 覆盖这两种。**改动未上硬件验证。**
+`test_efi_transaction` 的 30 个场景各跑 4 组 permutation 覆盖这两种。
+
+`app.c` 在驱动放开 GPU 之后、交棒之前还会再跑一次 `GuAd104ColdEntry()`。这条复检
+以前没有任何测试盖到：`test_app_flow` 把它桩成 `TRUE`，`test_msi_release` 桩成一个
+变量，`test_efi_transaction` 只调 `GuAd104Prepare()`。现在夹具在 `Prepare()` 之后
+紧接着调它，四种 permutation 都会跑到。**改动未上硬件验证。**
 
 五个测试套件现在都在这个端口上跑得起来，全部返回 0：
 
