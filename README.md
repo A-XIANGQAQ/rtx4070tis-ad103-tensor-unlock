@@ -227,25 +227,35 @@ DLSS on : 126.22 FPS  -> 126.48 FPS     +0.21%
 https://github.com/A-XIANGQAQ/gpu-unlock-ada/tree/ad103-2705/windows/ad103-2705
 ```
 
+**同一个卡型照下面走。** 分支里已经就是这个卡的移植结果，不需要再跑移植工具：
+
 ```powershell
 git clone https://github.com/JustAResearcher/gpu-unlock-ada
 cd gpu-unlock-ada
 git fetch https://github.com/A-XIANGQAQ/gpu-unlock-ada ad103-2705
 git checkout FETCH_HEAD
+cd windows\ad103-2705
 
-# 生成本机的 ESP 标识（这个文件故意不提交）
-#   按 windows/ad103-2705/boot_profile.example.h 的格式写 windows/ad103-2705/local/boot_profile.h
-#   本卡的 ESP: partition size 614400 sectors, 自己的 GPT partition GUID
+# 1. 写本机的 ESP 标识（这个文件故意不提交；格式见 boot_profile.example.h）
+#    本卡：partition size 614400 sectors，自己的 GPT partition GUID
+#    照着 example 建 local\boot_profile.h
 
-# 用本仓库的工具把目标目录改成本卡（device id / bus / BAR0 / 路径 / 驱动 hash）
-python tools/patch-target.py
+# 2. 编译（gcc 编核心库 → MSVC link 出 EFI）
+.\Build-Experimental.ps1
+#    产物 build\AD104-EXPERIMENTAL.EFI，末尾会打印 sha256 与 verify 结果
+#    MSVC 找不到就显式给：.\Build-Experimental.ps1 -VcVars64 'C:\...\vcvars64.bat'
 
-# 编译，产物放到 FAT32 U 盘的 \EFI\BOOT\BOOTX64.EFI
+# 3. 部署到 FAT32 U 盘（这一步用的是本仓库的脚本，不是分支里的）
+cd <本仓库>
 tools\deploy-usb.ps1 -Drive H -Profile unlock `
-    -efi gpu-unlock-ada\windows\ad103-2705\build\AD104-EXPERIMENTAL.EFI
+    -efi <gpu-unlock-ada>\windows\ad103-2705\build\AD104-EXPERIMENTAL.EFI
 
-# 开机 F8 选 U 盘，按 U
+# 4. 开机 F8 选 U 盘，按 U
 ```
+
+`Build-Experimental.ps1` 的产物哈希是确定的：同样的源码编出同样的文件，
+`rebuild-efi.ps1` 靠的就是这一点（见下面）。`Build.ps1 -RunTests` 还要
+`-Prom` 与 `-Assets` 两个参数才跑 host 测试。
 
 `deploy-usb.ps1` 不带参数时只列出可移动卷；`-Profile` 决定建哪个输出目录
 （`unlock` → `AD104-UNLOCK`，`probe` → `AD104-PROBE`），不给 `-efi` 就取默认路径。
@@ -253,9 +263,38 @@ tools\deploy-usb.ps1 -Drive H -Profile unlock `
 不同才存成 `BOOTX64.EFI.bak-<timestamp>`。它不格式化、不分区、不碰内置 ESP，
 非可移动卷没有 `-Force` 直接拒。
 
-`tools/patch-target.py` 只覆盖数值型 pin。`docs/PITFALLS.md` 里那些结构性改动
-（双显示节点、双 xHCI、级联断开、启动失败不再 halt、身份缓存、关机可见、关日志不置 fault）
-已经在上面那个分支里了。
+**换一张不同型号的卡才需要 `tools/patch-target.py`。** 它把
+`windows/ad104-msi` 整棵树复制一份，逐项改写数值型 pin（device id / subsystem /
+bus / BAR0 / device memory / ESP 几何 / bootmgr 尺寸与哈希 / PROM 哈希），
+输出到 `windows/ad103-2705` 并打印 unified diff：
+
+`--constants` 那份由 `gen_profile.py` 从探针抓的 JSON 生成，`profile.c` 也要落到
+`build\profile.ad103.c`（`patch-target.py` 从那里取）。其余参数里 ESP 几何要用
+`Get-Partition` 自己查，bootmgr 尺寸与哈希对
+`C:\Windows\Boot\EFI\Microsoft\Boot\bootmgfw.efi` 算：
+
+```powershell
+python tools\gen_profile.py <capture>.json `
+    --out build\profile.ad103.c --json-out build\capture-constants.json
+
+python tools\patch-target.py `
+    --constants build\capture-constants.json `
+    --esp-guid '{0x45c441a7,0xd76a,0x4036,{0xab,0x75,0xec,0x51,0x0f,0xcc,0xa8,0x1e}}' `
+    --bootmgr-size 3086680 `
+    --bootmgr-sha 2d60a2203865122dad22772136b3d905167d9dcf926d602bb5f48b3b6668abec `
+    --bar0-base 0xFB000000 --config-0x78 0x0012b410 `
+    --esp-partition 1 --esp-lba 2048 --esp-sectors 614400 `
+    --dry-run
+```
+
+九个 `--xxx` 参数缺一个就报错退出（`--dry-run` 只打 diff 不写盘，`--keep-existing`
+不重拷树）。上面这组值就是本卡的，换卡要换掉；`--out` 默认写
+`windows/ad103-2705`，会先删掉再从头拷。
+
+它只覆盖数值型 pin，`docs/PITFALLS.md` 里那些结构性改动（双显示节点、双 xHCI、
+级联断开、启动失败不再 halt、身份缓存、关机可见、关日志不置 fault）得手改，
+或者参照分支里已有的写法。`profile.c` 是生成文件，重新生成前读
+[PITFALLS #16](docs/PITFALLS.md)。
 
 想知道手上这份 EFI 是哪次提交编出来的，或者要把某次提交重编一遍，用
 `windows/ad103-2705/rebuild-efi.ps1`。每次构建都可复现，哈希稳定：

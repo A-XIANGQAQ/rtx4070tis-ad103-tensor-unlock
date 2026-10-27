@@ -229,6 +229,9 @@ def main():
             sys.exit(f"self-check FAILED, parser disagrees with upstream profile: {bad}")
         print("self-check PASS: parser reproduces the upstream 2782 FWSEC geometry")
 
+    a.out.parent.mkdir(parents=True, exist_ok=True)
+    a.json_out.parent.mkdir(parents=True, exist_ok=True)
+
     consts = dict(prom_sha256=prom_sha, device_id=dev["device_id"],
                   subsystem=f'{dev["subsystem_vendor"]}:{dev["subsystem_device"]}',
                   revision=dev["revision"], bus=dev["location"]["bus"],
