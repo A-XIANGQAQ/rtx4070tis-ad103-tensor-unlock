@@ -1,8 +1,5 @@
 # 同一赛道的其他实现，以及它们比本移植做得好的地方
 
-写这个文件是因为一开始只读了 `gpu-unlock-ada` 一个项目的代码。后来补读邻域项目，
-发现有两处别人已经解决得比这里好。
-
 ## Zagitta/gpu-unlock
 
 原始实现，Linux 内核模块路线。`SS0/SS1` + FLR 的机制、`FEAT_OVR_PLM` 的语义都出自
@@ -12,7 +9,7 @@
 ## impacifist/Windows-GPU-UNLOCK
 
 Windows UEFI 路线的原始实现，`gpu-unlock-ada` 的 `windows/ad104-msi` 明确说是从它的
-`internal-boot/boot/prepare-console.c` 改编的。**这个项目在两点上比本移植成熟：**
+`internal-boot/boot/prepare-console.c` 改编的。**这个项目比本移植成熟的地方：**
 
 ### 1. 显示子节点的数量不是固定的
 
@@ -92,9 +89,7 @@ AD103（4080 / 4080 SUPER）的只读 preflight。没细读。同芯片家族，
 前两项是真实差距。本移植能在这台机器上跑通，但那两处是靠「放宽断言」过的，不是靠
 「理解拓扑」过的。
 
-## 补读 `prepare-console.c` 和 `headless-policy.h` 之后的修正
-
-上面那张表有两格需要改，因为读完实际代码发现它的两条路线和这台机器都不完全对应。
+## 实际代码里的两处出入（`prepare-console.c` / `headless-policy.h`）
 
 ### 它的非 aggregate 路线只有 2 个 stage，且不断开 GPU owner
 
@@ -133,7 +128,7 @@ AD103（4080 / 4080 SUPER）的只读 preflight。没细读。同芯片家族，
 **它是第三种形态：单个正常 GOP + ConSplitter 保留。** 本移植的「放宽 `text`/`virtual`
 到允许 0」正是在这种形态下过 preflight 的。所以 aggregate 的代码不能照搬。
 
-### 真正值得抄的一条：残留边断言
+### 值得抄的一条：残留边断言
 
 ```c
 /* headless-policy.h */
@@ -157,7 +152,7 @@ GuLog("release: residual edges on GPU handles=%zu expected=0\n",(size_t)residual
 ```
 
 不改成硬断言的原因是：这台机器上 3-stage 是偏离上游的路径，把断言收紧会让一个还没被
-上游验证过的设计更脆。先看日志里的真实数字，再决定要不要收紧。
+上游验证过的设计更脆。
 
 ### 另外两条不打算抄
 
@@ -175,8 +170,8 @@ GuLog("release: residual edges on GPU handles=%zu expected=0\n",(size_t)residual
 - [miounet11/gpu-unlock-site](https://github.com/miounet11/gpu-unlock-site)：gpu-unlock.com
   文档站（Ampere/Ada/Turing，7 语言），适合作为给别人的入口页，而不是代码参考。
 
-方法论上还有一条：本仓库与上游现在都用 `mma.m16n8k32` e4m3 的寄存器探针量 FP8 发射率，
-与 GEMM 数字不可混比。三处实测放在一起看就清楚：
+本仓库与上游都用 `mma.m16n8k32` e4m3 的寄存器探针量 FP8 发射率，与 GEMM 数字不可
+混比。三处实测：
 
 | 仪器 | 数据 | 倍数 |
 |---|---|---|
@@ -184,9 +179,9 @@ GuLog("release: residual edges on GPU handles=%zu expected=0\n",(size_t)residual
 | Goldlionren 的 FP8 E4M3 GEMM（AD103 4080S） | 199.4 → 310.4 与 199.4 → 298.7 TF/s | 1.56× / 1.50× |
 | 上游的 matched E4M3 CUTLASS GEMM（AD103 4070 Ti S，`m=n=k=4096`，240 W 帽） | 59,325.8 → 59,495 GFLOP/s | 1.003× |
 
-同一张架构、同一个权限位，三个倍数差了一倍以上。原因不是谁测错了：发射率探针把访存和
-占用率全拿掉了，看到的是纯上限；GEMM 要真读 A/B、写 C，240 W 帽下先撞功率墙（上游那次
-更是撞到 0.3%，说明那个 kernel 在这个形状与功耗下 FP8 通路压根不是瓶颈）。
+同一张架构、同一个权限位，三个倍数差了一倍以上。发射率探针把访存和占用率全拿掉了，
+看到的是纯上限；GEMM 要真读 A/B、写 C，240 W 帽下先撞功率墙（上游那次撞到 0.3%，那个
+kernel 在这个形状与功耗下 FP8 通路不是瓶颈）。
 
-**所以「FP8 快 N 倍」这句话不成立**，得说清是哪个仪器、什么形状、什么功耗帽。本仓库
-只提供第一行，不作为对任何真实 FP8 工作负载的预测。
+「FP8 快 N 倍」这句话得说清是哪个仪器、什么形状、什么功耗帽；本仓库只提供第一行，
+不是对任何真实 FP8 工作负载的预测。

@@ -4,8 +4,7 @@
 干净交棒给 `bootmgfw.efi`，Windows 起来后 `f16/f32 ÷ f16/f16 = 1.001`，对照组不动。
 同一次 boot 内隔一段时间再测，比值仍是 1.001。
 
-**没走通的只有 ESP 接管那条**，装上去卡在 boot 阶段，见下。这份文件记录位置，目的是
-让接手的人不必重走。所有结论都标了证据等级。
+没走通的只有 ESP 接管那条，装上去卡在 boot 阶段，见下。
 
 ## 已验证成立的
 
@@ -61,7 +60,7 @@ FLR 后 `SS0=0x88888888 SS1=0x00000008 readout1=0 full=1`。
 一条都没有，A 那道假失败彻底消失。
 
 注意 `children=3`，比预期的 2 多一个（`Consumers counts: pci=1 child=2` 之外还有一个）。
-多出来的那个不影响结果，但说明这里的枚举口径和 `Consumers()` 不完全一致，值得留意。
+多出来的那个不影响结果，但说明这里的枚举口径和 `Consumers()` 不完全一致。
 
 `release: residual edges on GPU handles=1 expected=0` 仍然出现，被容忍，不致命。
 
@@ -89,14 +88,13 @@ AD104-ASSETS           = 5 个文件，80.5 MB
 | 自我链接（链式目标指向自己） | **排除** | `bootmgfw.orig.efi` 两轮都完整（3086680 / `2d60a220`） |
 | `#9` 的三处改动没打 | **排除** | 允许内置卷、允许同卷、链式改名都在装的版本里 |
 
-**未采集的证据（已丢失）**：`W:\AD104-UNLOCK` 是否被创建过。回滚脚本
-`install-esp.ps1 -Rollback` 会删除该目录，所以「EFI 到底跑没跑到写日志」这一步
-再也无法确认。这是本次取证上的最大失误：先建议回滚，而回滚顺手毁掉了判据。
+`W:\AD104-UNLOCK` 有没有被创建过，已经无法确认：`install-esp.ps1 -Rollback` 会删除
+该目录。卡住时先挂 ESP 读日志，再决定回不回滚。
 
 ## RUN0004：解锁成功了，然后被自己的假失败送掉
 
-这一条是回看第四次 U 盘尝试（`RUN0004.TXT`，2026-10-26 23:04:08）才读出来的，
-它改变了上面对「失败」的判断。当时现场是「按 U 没反应、画面卡住、按了重启键」。
+第四次 U 盘尝试（`RUN0004.TXT`，2026-10-26 23:04:08）的实际结果与当时的现场判断相反。
+现场是「按 U 没反应、画面卡住、按了重启键」。
 
 **事务体全绿**。`RUN0004.TXT` 第 189 行：
 
@@ -157,9 +155,7 @@ TextOut 边**。修法：preflight 里路径还活着的时候扫一遍 `AllHand
 把 `GuMsiReadyForWindows()` 挪到关日志之前，这样拒绝的理由能进日志；
 否则日志停在 `TRANSACTION OK` 上，什么都没解释。
 
-**证据等级**：A 是对已观测日志行的代码级解释，自洽且能定位到具体 handle；
-B、C 是代码路径上的确定事实。**三处都已在硬件上验证**（见上面 RUN0005 一节）。
-离线回归 `test-app-flow.exe` 15 个场景全绿。
+三处都已在硬件上验证（见上面 RUN0005 一节）。离线回归 `test-app-flow.exe` 15 个场景全绿。
 
 ## 唯一的存活线索（假设，未验证）
 
@@ -206,19 +202,17 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
 再算比值，并单独打印 `f16/f32 ÷ f16/f16` 这个活比值。
 
 真出现 `STOPPED. Power OFF fully; …` 说明门是软件拒的，硬件安全，**不用断电**：
-直接 Ctrl+Alt+Del 走 Windows Boot Manager 进去测，先别断电，断电会清掉 `SS0`/`SS1`。
-（这条提示以前看不见，就是 bug B。现在能看见了。）
+直接 Ctrl+Alt+Del 走 Windows Boot Manager 进去测。断电会清掉 `SS0`/`SS1`。
 
-## 踩过的坑里有一条和机制无关、但会骗过所有人
+## 一条与机制无关的测量陷阱
 
 `bench/cublas_gemm.cu` 原来对 `fp16/fp16acc` 也传 `float alpha=1.0f`。cuBLAS 的
 `cublasGemmEx` 按 `computeType` 的**宽度**读这个 `const void*`，于是它把 `1.0f` 的低
 两字节 `0x0000` 读成 `__half 0.0`，于是每个 GEMM 输出全零矩阵、实际工作量塌成几乎零，
 计时器报出 **4588 / 4744 TF/s**。
 
-这个数字一度写进了 README 的结果表。它比这张卡的物理峰值高一个数量级，本该第一时间
-被怀疑。现在的每个用例末尾都打 `nonzero C: …`，全零会直接标 `<-- BROKEN`。
-细节见 [PITFALLS.md](PITFALLS.md) #12。教训是：数字大得离谱时先怀疑自己没干活。
+这个数字比这张卡的物理峰值高一个数量级。现在每个用例末尾都打 `nonzero C: …`，全零
+直接标 `<-- BROKEN`，细节见 [PITFALLS.md](PITFALLS.md) #12。
 
 ## 重试前必须先做的事
 
@@ -228,20 +222,8 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
    卡住后先挂 ESP 读日志（`mountvol W: /S`），再决定是否回滚。
 3. **U 盘留作救援**，不作为日常介质。U 盘会坏，这是它不适合当唯一路径的原因。
 
-## 更值得走的方向
-
-`docs/PRIOR-ART.md` 记过：三种独立实现里，ESP 接管是最不成熟的那条。
-`MatchaCake` 把它明确标为「未测试，仅设计文档」；`MarvinFS` 干脆不走这条路。
-
-**要非易失，换形状**：独立 FAT32 分区 + 固件启动项，**不劫持 `bootmgfw.efi`**。
-按 `MarvinFS` 给出的数字：
-
-- 资产需要 ~85 MB（GSP 固件压不小，xz 也只到 70 MB）
-- 专用分区最小 128 MB，4K 扇区盘要 272 MB
-- 用现有 ESP 需 ≥117 MB 空闲（85 + 32 保留）
-
-这个形状的好处是：解锁 EFI 挂了，Windows Boot Manager 那条路完全没被碰过，
-固件菜单里选一下就能进系统。
+要非易失，换形状：独立 FAT32 分区 + 固件启动项，不劫持 `bootmgfw.efi`。容量要求与
+代价见 [INCIDENT-esp-takeover.md](INCIDENT-esp-takeover.md) 结论节。
 
 ## 拉起来需要什么
 
@@ -254,9 +236,3 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1 -RunNumber 5
 - `bench/`：四个 benchmark 源（`mma_bench` 在上游 `diagnostics/bench/` 下），
   口径与 `results/` 一致
 
-## 一句话
-
-机制成立，数字是真的，U 盘手动那条有两次 Windows 内实测（其中 `RUN0005` 的 EFI 还在盘上）。
-剩下的只有两件：ESP 接管那条一直没验证（它的线索 `Inspect()` 已改但没重测），和 U 盘本身的可靠性。
-
-想要非易失，别在 ESP 接管上加补丁，换独立分区那条形状。

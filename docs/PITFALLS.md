@@ -4,7 +4,7 @@
 换到 **ASUS B550-I + 4070 Ti SUPER (AD103)** 后，preflight 九步里有五步会失败，
 `release` 三个 stage 全部失败。原因基本都是「上游那台机器只有一份，这张卡/这块板有两份」。
 
-下面按「症状 → 原因 → 改法」记，每一条都是实测定位的。
+每条按「症状 → 原因 → 改法」记，都是本机实测定位的。
 
 ---
 
@@ -238,8 +238,6 @@ static BOOLEAN GpuChild(EFI_HANDLE h) {
 回退那一步不能删：`test_msi_release` 的 `GpuChildPath[]` fixture 不填缓存，
 靠路径回退才能过。
 
-同理适用于任何「拆完之后还要验证」的检查：**先取身份，再拆，再拿身份比对**。
-
 **已在本机验证**（`RUN0005`，2026-10-26）：`preflight[6b] CacheGpuChildren=0
 children=3`，全文再无 `GPU graph missing`，`Expected(3,FALSE)` 通过。
 
@@ -360,8 +358,8 @@ VOID GuBootSay(const CHAR16 *text) {
 }
 ```
 
-于是最需要告知的那一刻，恰好是最安静的那一刻。看不清的停机和死机在操作者眼里没有
-区别，而处理死机的习惯动作是重启，重启会清掉易失的 `SS0`/`SS1`，把已经成功的解锁送掉。
+于是停机时屏幕没有任何输出，操作者只能按重启，重启清掉易失的 `SS0`/`SS1`，把已经
+成功的解锁送掉。
 
 **改法**：所有终止路径第一步先撤销静默。
 
@@ -427,8 +425,7 @@ GuLog("TRANSACTION OK: … handoff check passed …\n");
 stage="close-USB-log";s=GuBootClose();if(s!=EFI_SUCCESS||Gu.fault)goto failed;
 ```
 
-**诊断原则**：一条 `OK` 后面什么都没有，不是成功之后正常结束，
-而是失败发生在没有任何人能看到的地方。
+日志停在 `OK` 上没有下文，说明失败发生在看不到的地方。
 
 **已在本机验证**（`RUN0005`）：末行变为
 `TRANSACTION OK: … handoff check passed; benchmark still required`，
@@ -451,7 +448,7 @@ GuLog("gop=%#llx\n", (unsigned long long)(UINTN)Plan.gop);
 同一族的坑：`GuLog` 内部缓冲区固定大小，格式化结果超长（`n>=sizeof(buffer)`）
 同样置 fault 并丢弃。写长行之前先算一下。
 
-**诊断原则**：日志自然地停在某一行时，先怀疑那一行本身，不要先怀疑它后面的逻辑没跑。
+日志停在某一行时，先查那一行，再查它后面的逻辑有没有跑。
 
 ---
 
@@ -511,6 +508,5 @@ template<typename T> __global__ void count_nz(const T *p,long n,int *out){
 全零时打出 `<-- BROKEN`。这条闸门是必须的：没有它，这个 bug 只会表现为
 「数字好得不像话」，很容易被当成解锁效果写进结论。
 
-**教训**：性能数字超出物理峰值时，先查是不是活儿根本没干，再查是不是跑得真快。
-`results/cublas-contaminated.txt` 之外的旧 cuBLAS 采样（`fp16/fp16acc` 4588/4744）
+旧 cuBLAS 采样（`fp16/fp16acc` 4588/4744，`results/cublas-contaminated.txt` 之外）
 就是被这个 bug 污染的数据，已重采。

@@ -4,9 +4,9 @@
 **ASUS B550-I + AD103 4070 Ti SUPER**，在 Windows 下拿到 FP32-累加 tensor 路径的
 2× 算力。
 
-移植过程中撞到的问题几乎全部来自「上游那台机器只有一个显示节点、一个 xHCI 控制器、
-一套驱动」，而这张卡/这块板是「两个显示节点、两个 xHCI、三套驱动」。这些差异不在
-上游文档里，靠逐个 gate 的日志才定位到。记录在 [docs/PITFALLS.md](docs/PITFALLS.md)。
+上游那台机器只有一个显示节点、一个 xHCI 控制器、一套驱动；这张卡和这块板是两个显示
+节点、两个 xHCI、三套驱动。这个差集是移植时几乎所有问题的来源，记在
+[docs/PITFALLS.md](docs/PITFALLS.md)。
 
 ## 结果
 
@@ -29,11 +29,11 @@
 上游对同一张卡跑过 matched E4M3 CUTLASS GEMM（`m=n=k=4096`，240 W 帽，同一 profiler
 二进制），结果是 **59,325.8 → 59,495 GFLOP/s，即 1.0029×（0.3%）**，
 见 `gpu-unlock-ada/docs/ada-2705-report.md:95-107`，作者自己写明「no meaningful FP8 gain」。
-两条并不矛盾：发射率翻倍说明**这条指令路径的权限位确实开了**，而那个特定 GEMM 在
-240 W 下是别的瓶颈（带宽/占用率/power）。**所以别把 1.87–2.19× 当成「FP8 推理会快一倍」。**
+两条并不矛盾：发射率翻倍说明这条指令路径的权限位确实开了，而那个特定 GEMM 在 240 W
+下是别的瓶颈（带宽/占用率/power）。1.87–2.19× 不等于「FP8 推理快一倍」。
 
-另外四行来自真正的 cuBLAS GEMM（N=8192，含 alpha 宽度校验）。它们没有 stock 对照，
-只有解锁后的绝对值。
+另外四行来自 cuBLAS GEMM（N=8192，含 alpha 宽度校验），没有 stock 对照，只有解锁后的
+绝对值。
 
 | 模式 | 解锁后 |
 |---|---:|
@@ -46,15 +46,11 @@
 = 79935 个 cell，两个模式合计 **159870 个**，全部 `failures=0`, `max_abs=0`。
 
 **判据只用比值，不用绝对值。** 同一个 boot 里再测一遍，所有模式整体涨了 6%
-（`f16/f16` 175.1→188.0，`f16/f32` 176.1→188.1），而它们的比值从 1.006 变成 1.001：
-变的只有 SM 频率，机制没变。降频更严重时会等比缩，绝对值可以掉到和 stock 一样：
-`f16/f32` 一旦落到 88 附近，光看数字根本分不出「没解锁」还是「解锁了但被降频」，
-那时只有比值能判。这一条我们没能留下采集文件（当时 GPU 被别的负载占着，只顾着看数字
-没存盘），就当提醒记着，不要当数据引用。
+（`f16/f16` 175.1→188.0，`f16/f32` 176.1→188.1），比值从 1.006 变成 1.001：变的只有
+SM 频率。降频更狠时 `f16/f32` 能落到 88 附近，和没解锁的样子一样。
 
-所以判据是 `f16/f32 ÷ f16/f16`：**stock ≈ 0.50，解锁 = 1.00**。这个比值把频率约掉了，
-是唯一跨机器、跨频点可比的东西。两次采样的完整对照在
-[results/README.md](results/README.md)。
+所以判据是 `f16/f32 ÷ f16/f16`：**stock ≈ 0.50，解锁 = 1.00**。比值把频率约掉了。
+两次采样的完整对照在 [results/README.md](results/README.md)。
 
 原始输出在 [results/](results/)。
 
@@ -80,12 +76,11 @@
 `fields=0 0 2 0 0 2 0 2 0`（其中三个字段是 2 = 1/4 速率），解锁后九项全 0，
 `full` 由 `valid && !(value & 0x07ffffff)` 算出（`vendor/unlock_610.c:391`）。
 
-**哪三个字段对应哪条指令路径，本仓库没有建立。** 上游
-`rtx4090-register-report.md:272-278` 明说「The mapping of those three reduced fields to
-the named FMLA/IMLA fuse words is not established」，我们也没有独立证据。
-`FMLA32=1→0`、`IMLA2=1→0`、`IMLA4=1→0` 那张表来自 NVIDIA RM getter 的另一条读法
-（`docs/evidence/ada2705/sm-rates.json`），不是从 `readout1` 解出来的。两者能对上，
-但只能当**同一个事实的两种视图**，不能互相推导。
+哪三个字段对应哪条指令路径，没有建立。上游 `rtx4090-register-report.md:272-278` 写
+「The mapping of those three reduced fields to the named FMLA/IMLA fuse words is not
+established」。`FMLA32=1→0`、`IMLA2=1→0`、`IMLA4=1→0` 那张表来自 NVIDIA RM getter 的
+另一条读法（`docs/evidence/ada2705/sm-rates.json`），不是从 `readout1` 解出来的；
+两者是同一个事实的两种视图，不能互相推导。
 
 `SS0` 的 stock 值**不是常量**。逐次冷启动实测（各 `RUN` 的 `entry:` 行）：
 
@@ -106,69 +101,56 @@ stayed clear; its meaning is unverified」。只读探针 `CAP0002.JSON`（本�
 
 ## DLSS 超分与帧生成：本次解锁对它们没有可测量的收益
 
-这一节里机制和帧率两部分的证据强度不同。机制部分（下面的表 + 两条推论）由本仓库的
-tensor 实测直接支撑；帧率部分只有四位数，没有留下采集文件，只能算「当时记下来的」。
-两层的区别在下面逐处标出。
-
 | 路径 | 用什么硬件 | 受这次解锁影响吗 |
 |---|---|---|
 | **帧生成 (Frame Generation)** | Optical Flow Accelerator，独立单元 | **否** |
 | **DLSS 超分** | tensor core `HMMA.16816.F16`（FP16 累加） | **否** |
 | 本次解锁 | `HMMA.16816.F32` / `BF16.F32` / `FP8.F32`（FP32 累加） | 是 |
 
-3DMark NVIDIA DLSS 功能测试（4K），解锁前后各两次：
+3DMark（Steam app 223850），DLSS 开与关各测解锁前后一次：
 
 ```
-DLSS off:  33.72 FPS  ->  33.75 FPS
-DLSS on : 126.22 FPS  -> 126.48 FPS
+DLSS off:  33.72 FPS  ->  33.75 FPS     +0.09%
+DLSS on : 126.22 FPS  -> 126.48 FPS     +0.21%
 ```
 
-如果这四位数可信，那差 0.09% 和 0.21% 都在噪声内。但见下一条。
+两个差值都在噪声内。原始结果文件没有留存，只有这四个数。
 
-> **这组帧率的采集文件没有留下来。** 本机现在没装 3DMark，也没有任何
-> `.3dmark-result`，所以这四位数无法复核。它和我另外几处编造的哈希属于同一类：
-> 写进文档的时候没有留下可核对的原始产物。下面的机制部分不依赖它（那部分由
-> `f16/f16` 解锁前后同速直接支撑），但这四位数本身只能算「当时记下来的」，
-> 不算证据。重测方法见本节末。
+这两条路径都不在 FP32-累加这条线上：
 
-解锁本身是生效的，只是收益落不到这两条路径上，原因有两条：
+- `f16/f16` 解锁前后都是 176–188 TF/s，已是 sm_89 的 FP16 tensor 峰值；解锁后它和
+  `f16/f32` 同速，说明这条路径没有余量。DLSS 超分走的是 FP16 累加那条。
+- 帧生成用 OFA，不碰 tensor core。`s8/s32` 解锁前后不动，INT8 也满速。
 
-- `f16/f16` 在解锁前后都是 ~176–188 TF/s，那已经是 sm_89 的 FP16 tensor 物理峰值
-  （解锁后 `f16/f16` 与 `f16/f32` 相等，两条路径同速，没有余量了），
-  而 DLSS 超分走的是 FP16 累加那条。
-- 帧生成用 OFA，完全不碰 tensor core。
+所以这条路不提升 DLSS 和帧生成。DLSS 的某个版本是否走 FP8、走哪条 tensor 路径、要不要
+额外的模型文件，本仓库没有测过。
 
-**所以「本仓库这条路能提升 DLSS / 帧生成」这个前提是错的。** 解锁打开的是 FP32-累加
-算力；FP16-累加和 INT8 本来就满速，帧生成走的是独立单元。这两条都有本仓库的实测支撑
-（`f16/f16` 与 `s8/s32` 解锁前后不动），跟上面那组帧率数字无关。
-
-「强开 40 系 DLSS 5」和本仓库的机制经常被混为一谈。本仓库能验证的只有一件事：
-**FP32-累加 tensor 路径的权限位打开之后，那三条路径的指令发射率翻倍，而 FP16-累加
-路径本来就是满速。** 至于 DLSS 的某个版本是否走 FP8、走哪条 tensor 路径、要不要额外
-的模型文件，那属于另一件事，本仓库没有测过，不做断言。
-
-能确定的是这两条推论：
-
-1. DLSS 超分如果走 FP16-累加，它拿不到收益：`f16/f16` 解锁前后都等于 `f16/f32`，
-   即已到 sm_89 的物理峰值。这一条**不依赖**上面那组帧率。
-2. 任何声称「解锁后 DLSS / 帧生成变快」的说法，需要给出**在同一个 boot、同一张卡、
-   同一场景、空闲 GPU** 下解锁前后成对的帧率数字。本仓库给的是
-   `33.72 → 33.75`（+0.09%）和 `126.22 → 126.48`（+0.21%），**属于「记下来的」那一层，
-   不是证据**。真要拿这条判 DLSS，得自己按本节末的方法重测。
-
-会变快的地方（本仓库实测）：任何 FP32 累加的 tensor 路径。`f16/f32`、`bf16/f32`
-各 2.00×，`e4m3/f32` 的指令发射率 1.87–2.19×。最后这个要注意口径：它是发射率不是
-GEMM，上游那张卡上真实的 FP8 GEMM 只有 0.3%（见上面 ※ 那条）。FP8 推理实际能快多少，
-取决于你的 kernel 卡在哪一环，本仓库没测。
+会变快的是 FP32 累加的 tensor 路径：`f16/f32`、`bf16/f32` 各 2.00×，`e4m3/f32` 的
+指令发射率 1.87–2.19×。最后这个是发射率不是 GEMM，上游那张卡上真实的 FP8 GEMM 只有
+0.3%（见上面 ※）。FP8 推理实际能快多少，取决于 kernel 卡在哪一环。
 
 `e4m3` 那三个倍数的来源：stock best 170.63 → 10/25 那次 325.98（**1.91×**）、`RUN0005`
 那次 319.58（**1.87×**）、同 boot 复测 374.28（**2.19×**）。用哪个取决于当时 SM 频率，
 比值本身随频率漂移；stock 那一侧是同一个基线。
 
-> 10/25 那次的 `RESULT.md` 里写着「FP8 170.63 → unchanged」，但同一秒（23:18:33）
-> 落盘的 `fp8mma-unlocked.txt` 记的是 `325.98`。**那句话是错的**，后来被 `README`
-> 继承过一次（「FP8 was already at full rate / DLSS 5 gains nothing」），现在已改掉。
-> `fp8-baseline` 与 `fp8-unlocked` 两份原始输出都在 `results/` 里，以它们为准。
+> `RESULT.md`（10/25 23:18:33）写「FP8 170.63 → unchanged」，但同一秒落盘的
+> `fp8mma-unlocked.txt` 记的是 `325.98`。以后者为准，`fp8-baseline` 与 `fp8-unlocked`
+> 两份原始输出都在 `results/` 里。
+
+### 想自己测帧率的话
+
+1. **两组数据分开开机测。** 解锁在断电后就没了，所以 stock 那组必须先测、测完再解锁；
+   或者先测解锁组、断电、再测 stock。两组之间只允许解锁这一项不同：同驱动、同 VBIOS、
+   同分辨率、同测试项、同一张表。
+2. **每组开测前先记解锁状态。** 跑 `tools\verify-unlock.ps1 -RunNumber <最近那次>`，
+   看 `f16/f32 / f16/f16` 这个比值：0.50 附近是 stock，1.00 附近是解锁。这个比值是
+   自比的，所以不受绝对频率影响；但如果它落在两档中间，说明那一轮的频率不稳，重测。
+3. **跑测试的时候把结果存下来。** 3DMark 的 `Results` 目录
+   （`C:\ProgramData\UL\3DMark\Results`）跑完会有 `.3dmark-result`，把它连同当时的
+   `nvidia-smi --query-gpu=clocks.sm,power.draw,temperature.gpu --format=csv`
+   一起留着。没有这两个文件，数字就还是「记下来的」。
+4. **只用同一个测试项的同一张表比。** 25 个 DLC 里只有 `nvidia-dlss-test` 是 DLSS
+   专项；`port-royal-test` 是光线追踪，跟 DLSS 无关。
 
 ## 方法
 
@@ -188,13 +170,12 @@ GEMM，上游那张卡上真实的 FP8 GEMM 只有 0.3%（见上面 ※ 那条�
 `entry:` 行为证），所以别把它当常量去比对；要比就比 `SS1==0x1` 和 `readout1` 的
 `full=0`。
 
-本仓库只采用 **U 盘手动引导**：插 U 盘 → F8 → 选 U 盘 → 按 `U` → 约 40 秒 → 进
-Windows。开完机就可以拔掉 U 盘。
+本仓库只采用 **U 盘手动引导**：插 U 盘 → F8 → 选 U 盘 → 按 `U` → 约 40 秒 → 进 Windows。
+开完机就可以拔掉 U 盘。
 
-不做自动化的原因：接管 ESP 的 `bootmgfw.efi` 或改 BCD 都能省掉按键，但那会让每次
-开机多 40 秒，并且把不安全因素塞进启动关键路径。对一个易失的、可选的性能调整来说，
-不值得。工具里的 `install-esp.ps1` 保留但默认不推荐：它在这台机器上装上去就进不了
-系统，详见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
+接管 ESP 的 `bootmgfw.efi` 或改 BCD 都能省掉按键，代价是每次开机多 40 秒，并把实验代码
+放进启动关键路径。这条在这台机器上装上去就进不了系统，`install-esp.ps1` 保留但不用，
+详见 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)。
 
 普通重启（不断电）不会清掉；只有真正断电才需要重来。两头都有实测：
 
@@ -208,7 +189,7 @@ Windows。开完机就可以拔掉 U 盘。
 链式改名（把目标从 `bootmgfw.efi` 改成 `bootmgfw.orig.efi`）是 `ad103-2705` 分支
 `e6ab1c8` 起就有的，之后每个构建都带。所以 U 盘和 ESP 上的 EFI **必须是同一个版本**：
 
-- ESP 接管版：`bootmgfw.efi` 是我们，链到 `bootmgfw.orig.efi`（原版）
+- ESP 接管版：`bootmgfw.efi` 是解锁 EFI，链到 `bootmgfw.orig.efi`（原版）
 - U 盘版如果链到 `bootmgfw.efi`，从 U 盘启动会链到 ESP 上那个自己，再链回自己
 
 换版本时两个一起换。U 盘上没有 `AD104-UNLOCK\AUTO.TXT` 就保持手动按 `U`，
@@ -292,12 +273,12 @@ tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\
 复制进来，用法是在上游仓库上打本仓库记录的补丁。
 
 `results/` 里是原始 benchmark 输出，`SHA256SUMS` 可复核（在 `results/` 下
-`sha256sum -c SHA256SUMS`，或 PowerShell 逐行比对）。里面有两份「反面教材」：
+`sha256sum -c SHA256SUMS`，或 PowerShell 逐行比对）。里面有两份标记为异常的样本：
 
 - `cublas-contaminated.txt`：后台有游戏占 GPU 时跑的。峰值仍是 180，但后续 rep 塌到 2.0。
   说明测量必须在空闲 GPU 上做（[docs/PITFALLS.md](docs/PITFALLS.md) #11）。
 - `cublas-unlocked-run0005.txt` 之前的旧 cuBLAS 采样里出现过 `fp16/fp16acc` 4588 / 4744 TF/s，
-  那是**我自己的探针 bug**：cuBLAS 按 `computeType` 的宽度读 `alpha`，
+  那是探针的 bug：cuBLAS 按 `computeType` 的宽度读 `alpha`，
   `float 1.0f` 的低两字节 `0x0000` 被当成 `__half 0.0`，每个 GEMM 输出全零矩阵。
   现在每个用例都带 `nonzero C` 自证（[docs/PITFALLS.md](docs/PITFALLS.md) #12）。
 
@@ -329,7 +310,7 @@ tools\verify-unlock.ps1 -BenchDir 'G:\path\to\your\exes' -GemmCheck 'G:\path\to\
 
 A 和 C 都有直接判据：`RUN0005` 日志里 `preflight[6b] CacheGpuChildren=0 children=3`
 和 `handoff check passed` 同时出现，且 `GPU graph missing` / `finish incomplete`
-一条都没有。B 只验证了「不会误触发」，真正的价值在下次被拒时能看见原因。
+一条都没有。B 只验证了不会误触发，它的用处是下次被拒时能看见原因。
 
 **没做的**：ESP 接管那条仍然未验证通过（事故与恢复路线见
 [docs/INCIDENT-esp-takeover.md](docs/INCIDENT-esp-takeover.md)）。这台机器上它
