@@ -323,5 +323,19 @@ A 和 C 都有直接判据：`RUN0005` 日志里 `preflight[6b] CacheGpuChildren
 覆盖，而在初始化路径。现在入口接受两种状态：stock `SS1==1`、blank `SS0==SS1==0`，
 `test_efi_transaction` 的 30 个场景各跑 4 组 permutation 覆盖这两种。**改动未上硬件验证。**
 
-移植期撞到的坑：[docs/PITFALLS.md](docs/PITFALLS.md)（13 条，含 cuBLAS alpha 那条）。
+四个测试套件现在都在这个端口上跑得起来，全部返回 0：
+
+| 套件 | 规模 | 之前为什么跑不了 |
+|---|---|---|
+| `test_app_flow` | 272 checks / 15 scenarios | — |
+| `test_guards` | 17 admission cases | 两处 device id 写的是上游 AD104 的 `0x2782` |
+| `test_efi_transaction` | 90 scenarios | 配置空间、寄存器初值、FWSEC 几何、WPR2 桩全是上游卡的常量 |
+| `test_boot_io` | 615 checks / 8 cases | pin 了上游 3086728 字节的 bootmgr，这台是 3086680 |
+
+最后一个跑起来之后找到一个真 bug：`Sealed` 是会话级状态，只在关日志时置位、
+从不复位，所以第二次 `GuBootOpen` 之后所有诊断静默消失。固件只调用一次，
+出货路径没被打到过。
+
+移植期撞到的坑：[docs/PITFALLS.md](docs/PITFALLS.md)（14 条，含 cuBLAS alpha 与
+`Sealed` 那条）。
 路走到哪、重跑看什么：[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
