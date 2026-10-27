@@ -722,3 +722,87 @@ PCI location: bus 8
 SS0/SS1 stock : 0x27304036 / 0x1
 FWSEC       : image_off=0x45b48 imem=0xf700 dmem=0xd80 ucode=9 engines=0x400
 ```
+
+## 17. `vbios-loader.exe` 只有在 `G:\workspace` 下面才解得开自己
+
+它是个 PyInstaller onefile。用默认 `TEMP` 直接跑会这样：
+
+```
+> G:\workspace\vbios-4070tis\vbios-loader.exe verify --json
+Error, failed to open 'C:\Users\ctxia\AppData\Local\Temp\onefile_17184_996458_mFL5Bi7-Mvs\entry.dll' for writing.
+exit code: 2
+```
+
+报错说「打不开 `entry.dll` 来写」。onefile 启动时必须把自身解包到 `TEMP` 里，
+所以这条错误真正说的是：**这个进程写不了 `TEMP`**。
+
+真正起作用的不是 `TEMP` 的位置，是**可执行文件自己的位置**。用一段只做
+`fopen` 的探针（同一份二进制换地方放）测出来的是这条规则：
+
+> 从 `G:\workspace` 下面启动的进程，写不了 `G:\workspace` 之外的任何地方。
+> 从其它目录启动的同一个进程，哪里都能写。
+
+探针四格全对：
+
+| 探针位置 | 写 `%LOCALAPPDATA%\Temp` | 写工作区内 |
+|---|---|---|
+| `G:\workspace\...\tmp\wprobe.exe` | `OPEN FAIL` | `OPEN OK` |
+| `G:\wsOut\w.exe` | `OPEN OK` | `OPEN OK` |
+
+按目录扫一遍同一个探针，只有工作区那一个失败：
+`C:\wsOut` OK / **`G:\workspace` FAIL** / `G:\workspacex` OK / `G:\workspace2x` OK /
+`G:\wsOut2` OK。名字相近但不在其下的目录都不受影响，所以这不是前缀字符串匹配。
+写工作区内部时五个位置**全部** OK。与路径长度也无关：
+`G:\wsOut\vbios-loader.exe`（43 字符）OK，`G:\workspace\inside\v.exe`（25 字符）FAIL。
+
+把 `vbios-loader.exe` 代进这条规则，就是开头那个现象：exe 在工作区里、`TEMP` 在
+工作区外 → 解包 `entry.dll` 被拒。
+
+**排除掉的四个原因**：
+
+- 磁盘满 —— `C:` 还有 52.97 GB
+- 权限 —— 手写同一个文件名同一个大小完全成功（4 B / 300 KB / 3 MB 都试过），
+  `C:\Temp\vbtest` 与 `%LOCALAPPDATA%\Temp` 的 ACL 里 `Authenticated Users`
+  有 `Modify`
+- Defender ASR —— `Get-MpPreference` 直接报 `0x800106ba`（Defender 服务没在跑），
+  这台机器装的是 360 安全卫士
+- 子目录不存在 / 残留 `onefile_*` —— 每次都是清空后新建的目录，失败后目录里
+  **一个文件都不剩**（连解一半的都没有）
+
+`G:\workspace` 的 ACL 和根目录下新建的目录不一样，多两条：
+
+```
+Everyone                     Deny  DeleteSubdirectoriesAndFiles
+A-XIANG_HOME\ctxia          Allow FullControl
+```
+
+这两条不是原因：`G:\workspacex` 与 `G:\wsOut2` 上同样加这两条也不受限，
+而受限的那个探针只要放在工作区外就能写。**这是进程级的位置限制，
+不是目录权限。**
+
+**规避**：两条路，任选一条即可（两件同时满足时也成立）。
+
+```powershell
+# 一、把 TEMP 也放进工作区（进程和它的临时目录在同一侧）
+$env:TMP = 'G:\workspace\vbios-4070tis\tmp'
+$env:TEMP = $env:TMP
+& G:\workspace\vbios-4070tis\vbios-loader.exe verify --json
+```
+
+```powershell
+# 二、把 exe 复制到工作区外再跑（进程和它的临时目录都在外面）
+Copy-Item G:\workspace\vbios-4070tis\vbios-loader.exe "$env:TEMP\v.exe" -Force
+& "$env:TEMP\v.exe" verify --json
+```
+
+第二种写法拿真的 loader 跑过一次，`TMP`/`TEMP` 用的是系统默认值：
+拿到完整 JSON，`state` 是 `override-not-active`，`exit=4`（这个退出码是
+「override 还没被驱动接管」的正常值，不是失败）。同一个 exe 留在工作区里、
+`TEMP` 用默认值，就是开头那行 `failed to open ... entry.dll`。
+
+仓库里的 `rollback.ps1` 与 `do-load.ps1` 开头本来就有第一种写法的两行
+（`$env:TMP = "$d\tmp"`），所以它们一直没撞上；只有在终端里手敲
+`vbios-loader.exe` 时才会遇到。
+
+同一条规则会影响工作区里**任何**需要写外部临时目录的程序，不只这一个 exe。
+这次是在查它为什么起不来时才发现的，判据就是「同一个二进制换个位置就正常」。
