@@ -250,6 +250,21 @@ tools\deploy-usb.ps1
 （双显示节点、双 xHCI、级联断开、启动失败不再 halt、身份缓存、关机可见、关日志不置 fault）
 已经在上面那个分支里了。
 
+想知道手上这份 EFI 是哪次提交编出来的，或者要把某次提交重编一遍，用
+`windows/ad103-2705/rebuild-efi.ps1`。每次构建都可复现，哈希稳定：
+
+```powershell
+# 从任意提交重建并打印哈希（内部开一个临时 worktree，用完删掉）
+windows\ad103-2705\rebuild-efi.ps1 -Commit cb3691b
+# 列出可以选的提交
+windows\ad103-2705\rebuild-efi.ps1 -List
+```
+
+本地七个提交的构建结果和「有没有上过机」都写在
+[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。一句话：**只有 `76FEE036`
+真正解锁过这块卡**（`RUN0005` 无 override、`RUN0006` 带 v1 override 都成功），
+其余每一版都还没上过机。
+
 验证（三个 benchmark 的 `.exe` 不进仓库，需要本机编）：
 
 ```powershell
