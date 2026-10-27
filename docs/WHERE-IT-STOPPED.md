@@ -260,7 +260,13 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 是 release 之后那两种拒绝各有一个 stage 名，与 `AFB6524A` 的差别再加上
 `Windows image staged` 那句日志不再声称 pin 了摘要）。
 `RUN0013` 是这一版的第一次硬件尝试。`76FEE036` 那份同时留在
-`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`，任何时候都能换回去。
+`H:\EFI\BOOT\BOOTX64.VERIFIED-76FEE036.EFI`。
+
+它随时能换回去，但换回去之后只有一种情况能用：注册表里没挂 VBIOS override。
+`76FEE036` 的二进制里没有 blank 入口态那道闸门（搜 `blank selectors` 命中 0，
+搜 `wantSS1=` 命中 1），所以挂着 320 W override 开机时，它读到 `SS0=0 SS1=0` 一样会拒，
+结果就是 `RUN0007`..`RUN0012` 那六份 285 字节的日志。也就是说「换回能解锁的那版」
+和「保留 320 W」这两件事目前是互斥的。
 
 判读用 `tools\classify-run.ps1`，不用自己数长度：
 

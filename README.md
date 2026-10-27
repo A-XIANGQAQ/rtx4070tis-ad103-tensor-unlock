@@ -313,6 +313,12 @@ windows\ad103-2705\rebuild-efi.ps1 -List
 真正解锁过这块卡**（`RUN0005` 无 override、`RUN0006` 带 v1 override 都成功），
 其余每一版都还没上过机。
 
+换回 `76FEE036` 之前先看清楚它是什么：那一版**没有** blank 入口态这道闸门
+（二进制里搜不到 `blank selectors`，`wantSS1=` 还在）。也就是说，只有在注册表里
+没挂 VBIOS override 的时候它才能走到事务那一步；挂着 override 开机，它读到
+`SS0=0 SS1=0` 就会拒，和 `RUN0007` 到 `RUN0012` 那六次一样。要换回去就得同时
+把 override 卸掉，那是 285 W。
+
 验证（三个 benchmark 的 `.exe` 不进仓库，需要本机编）：
 
 ```powershell
