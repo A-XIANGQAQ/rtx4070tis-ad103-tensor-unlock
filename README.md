@@ -241,10 +241,17 @@ git checkout FETCH_HEAD
 python tools/patch-target.py
 
 # 编译，产物放到 FAT32 U 盘的 \EFI\BOOT\BOOTX64.EFI
-tools\deploy-usb.ps1
+tools\deploy-usb.ps1 -Drive H -Profile unlock `
+    -efi gpu-unlock-ada\windows\ad103-2705\build\AD104-EXPERIMENTAL.EFI
 
 # 开机 F8 选 U 盘，按 U
 ```
+
+`deploy-usb.ps1` 不带参数时只列出可移动卷；`-Profile` 决定建哪个输出目录
+（`unlock` → `AD104-UNLOCK`，`probe` → `AD104-PROBE`），不给 `-efi` 就取默认路径。
+目标卷上已有 `BOOTX64.EFI` 且与要部署的这份哈希相同，就跳过备份、只打一行说明；
+不同才存成 `BOOTX64.EFI.bak-<timestamp>`。它不格式化、不分区、不碰内置 ESP，
+非可移动卷没有 `-Force` 直接拒。
 
 `tools/patch-target.py` 只覆盖数值型 pin。`docs/PITFALLS.md` 里那些结构性改动
 （双显示节点、双 xHCI、级联断开、启动失败不再 halt、身份缓存、关机可见、关日志不置 fault）
@@ -255,6 +262,7 @@ tools\deploy-usb.ps1
 
 ```powershell
 # 从任意提交重建并打印哈希（内部开一个临时 worktree，用完删掉）
+# 注意 local/boot_profile.h 被 git 忽略，脚本会从主检出复制过去
 windows\ad103-2705\rebuild-efi.ps1 -Commit cb3691b
 # 列出可以选的提交
 windows\ad103-2705\rebuild-efi.ps1 -List
