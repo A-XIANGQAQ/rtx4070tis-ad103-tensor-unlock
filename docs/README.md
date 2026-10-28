@@ -1,6 +1,6 @@
 # 文档索引
 
-十篇，各管一件事。按要回答的问题选。
+十一篇，各管一件事。按要回答的问题选。
 
 | 文档 | 回答什么 | 什么时候翻 |
 |---|---|---|
@@ -13,7 +13,8 @@
 | [INCIDENT-esp-takeover.md](INCIDENT-esp-takeover.md) | ESP 接管那次事故：现象、逐个排除、三条恢复路线 | 想省掉按 `U` 之前 |
 | [PRIOR-ART.md](PRIOR-ART.md) | 邻域实现对比：上游、impacifist、Zagitta、同型号 Linux 案例 | 想知道某处设计是抄的还是自己加的 |
 | [APPLICATIONS.md](APPLICATIONS.md) | 第三方现场报告汇总：哪些负载变快、哪些没变、数据怎么分级 | 判断这张卡上什么会变快 |
-| [ECOSYSTEM-2026-10.md](ECOSYSTEM-2026-10.md) | 外部生态盘点（2026-10-28）：上游 84 个提交、同卡四个移植、四写机制变体 | 想看去别人怎么做的、要不要 rebase 上游 |
+| [ECOSYSTEM-2026-10.md](ECOSYSTEM-2026-10.md) | 外部生态盘点（2026-10-28）：上游 84 个提交、同卡四个移植、四写 payload 的逐字节清单（就是我们在跑的那份） | 想看去别人怎么做的、要不要 rebase 上游 |
+| [UPSTREAM-2705-CROSSCHECK.md](UPSTREAM-2705-CROSSCHECK.md) | 上游 2705 报告（Linux / 240 W）与本仓库（Windows / 320 W）逐项对表：为什么绝对值不同、比值相同 | 引用外部数字前、被问「你们的数和上游对不上」时 |
 
 仓库根的 [README.md](../README.md) 是入口与结果表，[results/README.md](../results/README.md)
 是每份原始采集的条件与统计口径，[bench/README.md](../bench/README.md) 与

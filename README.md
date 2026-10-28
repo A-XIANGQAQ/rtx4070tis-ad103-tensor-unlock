@@ -58,6 +58,12 @@ FP16 tensor 峰值，DLSS 超分走的就是那条；帧生成根本不碰 tenso
 3. 写 `FEAT_OVR_PLM=0xffffffff`、`SS0=0x88888888`、`SS1=0x8`，然后对 GPU 做一次 PCIe FLR，
    验证三个值在 FLR 后仍然保持
 
+第 2 步里 V67 payload 实际做的是**四写**：WPR_CFG `0x1fa7cc` ← `0xfffff0ff`、FBPA `0x9a0148` ←
+`0xffffffff`、WPR `0x1fa7c4` ← `0xffffffff`、FEAT_OVR_PLM `0x823804` ← `0xffffffff`，随后置
+marker `0x67b00001` 并停 SEC2；第 3 步是 EFI 侧在它之后补的 selector 写入。四写的四个目标与
+偏移可用 `python tools\payload-report.py` 从本机 payload 复算，说明见
+[docs/ECOSYSTEM-2026-10.md](docs/ECOSYSTEM-2026-10.md) 第四节。
+
 驱动随后加载时看到的是「权限已全开」的硬件状态。改动的寄存器原文见
 [docs/EVIDENCE.md](docs/EVIDENCE.md)。
 

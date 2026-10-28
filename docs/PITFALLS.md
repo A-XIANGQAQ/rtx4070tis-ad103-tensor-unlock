@@ -76,6 +76,16 @@ static BOOLEAN GpuChild(EFI_HANDLE h) {
 然后把所有 `e->handle==Plan.gop` 的地方换成 `GpuChild(e->handle)`，包括
 `Consumers()` 的两个循环、`Removed()`、以及 `DisconnectController` 的目标 handle。
 
+**外部复现（2026-10-28 核对）**：同卡移植 `wyx1277348872-a11y/gpu-unlock-4070tis-ad103-win`
+独立撞上同一件事，写在它的 `PORT-2705.md`：这块板的固件把**两个**子控制器绑到目标 GPU，
+一个暴露 Graphics Output Protocol，另一个**完全没有 GOP**；上游的 `DisplayChild()` 要求每个
+子节点都是合法 GOP 显示，对第二个返回 `EFI_UNSUPPORTED`，于是 `GuFindReleaseOwner()` 失败。
+他们的修法在 `ownership.c`（约 90 行、3 个文件），把「必须是 GOP」放宽成「按路径认亲」。
+与本条同因不同修：他们改所有权遍历，我们改路径匹配（24 字节前缀 + 结构化 walk）。
+两条都在「同一 root port 下 ADR 差一字节」这个现象上收口 —— 不是单块板的偶发。同卡其余三个
+移植（`HumbleUser33` 的 2704、`NeoChen1024` 的 ad103、`xHeaVeNxyz` 的 Windows 版）的对照见
+[ECOSYSTEM-2026-10.md](ECOSYSTEM-2026-10.md) 第二节。
+
 ---
 
 ## 3. `Consumers()` 报 `text=0 virtual=0 gfx=0` 然后 `ACCESS_DENIED`
@@ -688,6 +698,15 @@ blank 闸门在这一次共命中 9 次（`classify-run.ps1` 报 `blank: accepte
 一个仍存的小差异：`release: residual edges on GPU handles=1 expected=0` 在 `RUN0013` 里
 出现 5 次，和 `RUN0005`/`RUN0006` 一样（也是 5 次，也是 1），不是这次新增的。
 两次成功跑都带着它，且 `TRANSACTION OK` 照常，所以不阻断交棒。
+
+**上游对另一个入口态的处理相反，值得对照**：`JustAResearcher/gpu-unlock-ada` 的 `da96e3f`
+（2026-10-26）把「PLM 已经是打开状态」记成 **skipped，不再记成解锁失败**。这与本条的闸门不
+冲突：内核侧早就把「已解锁或不是冷启动」当 `-EALREADY` 返回（fork `vendor/unlock_610.c:1301-1303`），
+`RUN0003` 判的也是 `SKIPPED`。两边都在区分「没成功」与「不需要做」。真正的差别在**入口态本身**：
+上游样本是 stock VBIOS，`SS1==1`、`PLM=0xffffff8f`；我们是 320 W override 下 `SS0==SS1==0`。
+所以 blank 分支不是 `da96e3f` 的另一种写法，而是它没有覆盖的第三种情形 —— 保留，并继续只在
+两个可核实的形态上放行（`SS1==1` 与 `SS0==SS1==0`）。上游那 84 个提交、以及 `da96e3f` 在
+整体生态里的位置见 [ECOSYSTEM-2026-10.md](ECOSYSTEM-2026-10.md) 第一、九节。
 
 ## 14. `Sealed` 是会话级状态，但只在关日志时置位、从不复位
 

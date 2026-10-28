@@ -260,7 +260,13 @@ blank 是 `SS0==0 && SS1==0`。改动落在
 ### 哪一版 EFI 上过机（每次构建都能重算，不是回忆）
 
 `windows/ad103-2705/rebuild-efi.ps1 -Commit <hash>` 从任意提交重建并打印哈希，
-脚本里带着这张对照表。下面每一行都在 2026-10-28 重编过一遍，不是回忆：
+脚本里带着这张对照表。下面每一行都在 2026-10-28 重编过一遍，不是回忆。
+
+> **表里的 commit 是 rebase 前的 id。** 2026-10-28 已把分支 rebase 到上游 `d28c485`，
+> 33 个提交全部重写（tip `517930f` → `5cc799c`，原 tip 保留为 tag
+> `ad103-2705-pre-rebase-20261028`），所以这些短 id 在分支上已经查不到。要在当前分支上
+> 复现某一行，用 `git log --grep='<该行描述里的关键词>'` 找对应提交，或直接拿 tag 建一个
+> 临时 worktree 重建。大小与哈希这两列不受影响 —— rebase 后重建的 `07052565` 与表里一致。
 
 | commit | 大小 | sha256 前 8 | 上过机吗 |
 |---|---|---|---|
@@ -454,8 +460,19 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1
 ## 拉起来需要什么
 
 - `windows/ad103-2705` 分支：`https://github.com/A-XIANGQAQ/gpu-unlock-ada/tree/ad103-2705/windows/ad103-2705`
-  基于上游 `4e7fefc`；三个 bug 的修复在 `cb3691b`，`c794f3e` 只改文档，
+  基于上游 `4e7fefc`（2026-10-24）。**2026-10-28 核对：上游 `main` 已到 `d28c485`，落后 84 个
+  提交（ahead 84 / behind 0 / 228 文件），其中 `windows/` 下 0 个文件** —— 本分支的改动集与
+  上游不相交，rebase 不需要解决冲突。核对命令：
+  `gh api repos/JustAResearcher/gpu-unlock-ada/compare/4e7fefc...main`。
+  **2026-10-28 已 rebase 到 `d28c485`**（原 tip `517930f` 打成 tag
+  `ad103-2705-pre-rebase-20261028`，rebase 后 33 个提交重写为 tip `5cc799c`）：
+  `windows/ad103-2705` 子树哈希 rebase 前后同为 `70a027c1`，重建的 EFI 仍为 106496 B、
+  sha256 `0705256564e57690ef51f282a81df99e9da5af411ae49b56fde110c6d99120c6`（即下面表里
+  `07052565` 那份，哈希不变才说明 rebase 没碰产物）。上游那 84 个提交里 `firmware/` 下 0 个
+  文件，所以 payload 的三个 pin 也不受影响。
+  三个 bug 的修复在 `cb3691b`，`c794f3e` 只改文档，
   `6a82336` 恢复九处图检查的硬失败并加 blank 入口态
+  （这三个是 rebase 前的 id；按提交信息里的标题在 `git log --grep` 里查更稳）
 - 本仓库 `docs/PITFALLS.md`：19 条，每条「症状 → 原因 → 改法」。移植阻塞点之外
   还有 4 个「拆完之后还要验证」的坑（6b 身份要缓存、10b 停机要可见、10c 关日志≠故障、
   10d `%p` 会静默整份日志）、#12 cuBLAS alpha 宽度、#13 override 让 SS0/SS1 读 0、

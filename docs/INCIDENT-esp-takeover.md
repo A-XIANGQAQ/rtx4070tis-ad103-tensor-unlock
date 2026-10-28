@@ -127,3 +127,9 @@ copy /y W:\EFI\Microsoft\Boot\bootmgfw.orig.efi W:\EFI\Microsoft\Boot\bootmgfw.e
   272 MB），用现有 ESP 需 ≥117 MB 空闲。这个形状的好处是解锁 EFI 挂了，
   Windows Boot Manager 那条路完全没被碰过。
 - 恢复不需要重新安装 Windows，也不需要动 BCD。
+- **这个形状已经有人实现（2026-10-28 核对）。** `wyx1277348872-a11y` 那条线的安装器做的正是
+  上一条：建一个隐藏的 300 MiB FAT32 分区（无盘符），或让你指定一个 FAT32 U 盘，把一个小的
+  UEFI 程序放进去，再加一个固件启动项 `GPU Unlock (auto)` 排在 Windows 之前。边界没变：
+  解锁本身仍然易失，断电仍清 `SS0`/`SS1`，它省掉的是「插 U 盘 + F8 + 按 U」。这条不改变上面
+  的取舍，只是把「建议」变成「已验证可落地」。出处与这一节的完整对照见
+  [ECOSYSTEM-2026-10.md](ECOSYSTEM-2026-10.md) 第五节。

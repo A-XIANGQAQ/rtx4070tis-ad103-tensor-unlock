@@ -185,3 +185,58 @@ kernel 在这个形状与功耗下 FP8 通路不是瓶颈）。
 
 「FP8 快 N 倍」这句话得说清是哪个仪器、什么形状、什么功耗帽；本仓库只提供第一行，
 不是对任何真实 FP8 工作负载的预测。
+
+## 2026-10-28 增补：四个新对照
+
+2026-10-24 之后这个方向冒出很多仓库。只收与本移植会出现**实质分歧**的四个；全景与排除项见
+[ECOSYSTEM-2026-10.md](ECOSYSTEM-2026-10.md)。
+
+### `physicsdolphin/nv-uefi-unlocker`（Rust，★52）
+
+链条与我们的完全一致（SEC2 scrubber → FWSEC-FRTS/WPR2 → 签名 Booter 起 GSP-RM → 四写 payload
+→ 读回 → FLR → 链回 Windows Boot Manager），**四写那份 payload 就是我们在跑的那份**
+（sha256 `44c36b2d…`，见 `tools/payload-report.py`）。所以它值钱的不是机制，是周边四件：
+
+1. **回放/诊断模式**：不放 `v67-*.bin` 就走完整链、零写入。我们想做同类的事目前只能自己注释
+   payload —— 这是本移植最该抄的一条。
+2. **多卡**：逐张处理，`EALREADY` 让位下一张，单张失败只对那张 emergency FLR；`tx-select-bdf.txt`
+   钉卡，对不上就拒绝猜测。
+3. **武装模式**：`i_know_what_i_am_doing.txt` 存在时确认变 5 秒倒计时。
+4. **链回目标钉定**：`chain-target.txt` 可链到 Limine 而非 Windows Boot Manager。
+
+两条负面结论我们文档里没有：**Linux RTD3 会擦掉解锁**（issue #9）、**Thunderbolt/热插拔 eGPU
+是易失解锁的敌对环境**（`4f8b9ab`）。跨系统使用前必须先补这两条。
+
+### `wyx1277348872-a11y/gpu-unlock-4070tis-ad103-win`（同卡 `10de:2705`）
+
+fork 自 `Zihao-Wu06/gpu-unlock-for-windows`（Zagitta + gpu-unlock-ada 的 Windows 移植再移植）。
+两条对照：
+
+- **拓扑坑独立撞上**：他们的 `PORT-2705.md` 记录同一 root port 下两个子控制器、其中一个没有
+  GOP，`DisplayChild()` 返回 `EFI_UNSUPPORTED`，修 `ownership.c` 约 90 行 / 3 文件。见
+  [PITFALLS.md](PITFALLS.md) #2 的外部复现段。
+- **非易失换形状已成实现**：安装器建隐藏 300 MiB FAT32（无盘符）+ 固件启动项 `GPU Unlock (auto)`，
+  见 [INCIDENT-esp-takeover.md](INCIDENT-esp-takeover.md) 结论节。
+
+数字也一致：330 W 上限下 FP16→FP32 84.92 → 149.67（1.76×），FP32 CUDA core 对照 0.99× —— 与
+本仓库「GEMM 撞功率墙、只有发射率才是 2×」同一结论。
+
+### `impacifist/Windows-GPU-UNLOCK` 的 `c403e8f`
+
+「把 GPU 家族特征、共享固件、机器 profile pin 分开」。本移植现在 19 个 pin 全塞在
+`profile.c` 一个函数里（`tools/gen_profile.py` 的 `Registers()`），换一张卡就要重跑生成器、重核
+全部 19 项。按它那刀切下去，家族级（`PMC_BOOT_0` 形状、FEAT 偏移）、固件级（FWSEC 几何、
+WPR2 区间）、机器级（BAR、device、分区 GUID）各一层，换卡时只需要换最后一层。这是结构性建议，
+不是 bug 修复，代价是 `profile.c` 的生成模板要重写一遍。
+
+### `Zagitta/gpu-unlock`：Release 2.0 + recipe driven
+
+`09305c4` 把 driver 重构成「一张卡一份 recipe」，不再改代码；`0532473` 是 Release 2.0，
+`1fc6d62` 加 Unraid 支持。与本移植的关系：我们的等价物是 `tools/patch-target.py`（从
+`windows/ad104-msi` 复制并改写 pin）—— 同一思路的雏形，但还没到「数据与代码分离」。
+
+### 上游自己的 2705 报告
+
+`JustAResearcher/gpu-unlock-ada` 的 `docs/ada-2705-report.md` 是我们这张卡的 Linux 侧 canary
+（240 W 帽、驱动 580.178.04、FP16/FP32 95.0 → 189.9）。逐项对表与差异解释另开一篇：
+[UPSTREAM-2705-CROSSCHECK.md](UPSTREAM-2705-CROSSCHECK.md)。**引外部绝对数字前先看那篇。**

@@ -48,8 +48,23 @@ tools\deploy-usb.ps1 -Drive H -Profile unlock `
 ```
 
 `Build-Experimental.ps1` 的产物哈希是确定的：同样的源码编出同样的文件，
-`rebuild-efi.ps1` 靠的就是这一点。`Build.ps1 -RunTests` 还要 `-Prom` 与 `-Assets`
-两个参数才跑 host 测试。
+`rebuild-efi.ps1` 靠的就是这一点。这份源码重建出来应当是 **106496 B、sha256
+`0705256564e57690ef51f282a81df99e9da5af411ae49b56fde110c6d99120c6`**，也就是 `RUN0013`
+那次上机的那份。这个值同时是「改动有没有影响产物」的判据：
+
+```powershell
+Push-Location <gpu-unlock-ada>\windows\ad103-2705
+.\Build-Experimental.ps1
+(Get-FileHash build\AD104-EXPERIMENTAL.EFI -Algorithm SHA256).Hash
+Pop-Location
+```
+
+2026-10-28 从上游 `4e7fefc` rebase 到 `d28c485` 就是按这个验收的：33 个提交干净重放，
+`windows/ad103-2705` 子树哈希前后同为 `70a027c1`，重建哈希仍等于上面那一串。反例见
+[PITFALLS.md](PITFALLS.md) #18 —— 只改注释行数也会通过 `__LINE__` 改变产物，所以哈希变了
+先看这一条，再怀疑 rebase 本身。
+
+`Build.ps1 -RunTests` 还要 `-Prom` 与 `-Assets` 两个参数才跑 host 测试。
 
 `deploy-usb.ps1` 不带参数时只列出可移动卷；`-Profile` 决定建哪个输出目录
 （`unlock` → `AD104-UNLOCK`，`probe` → `AD104-PROBE`），不给 `-efi` 就取默认路径。
@@ -98,13 +113,19 @@ python tools\patch-target.py `
 ```powershell
 # 从任意提交重建并打印哈希（内部开一个临时 worktree，用完删掉）
 # 注意 local/boot_profile.h 被 git 忽略，脚本会从主检出复制过去
-windows\ad103-2705\rebuild-efi.ps1 -Commit cb3691b
+windows\ad103-2705\rebuild-efi.ps1 -Commit 380c750     # 76FEE036，RUN0005/RUN0006 那次
+windows\ad103-2705\rebuild-efi.ps1 -Commit 5cc799c     # 07052565，RUN0013 那次
 # 列出可以选的提交
 windows\ad103-2705\rebuild-efi.ps1 -List
 ```
 
+`-Commit` 要用 rebase 后的 id。2026-10-28 那次 rebase 把 33 个提交全部重写，旧 id 在分支上
+已经查不到，新旧对照（含 `-List` 的起点 `380c750`）在 fork 的
+`windows/ad103-2705/REBASE-2026-10-28.md`；哈希没有变，所以脚本按 sha256 查表的功能不受
+影响。旧 tip 还留在 tag `ad103-2705-pre-rebase-20261028` 上，也能直接传。
+
 每次构建的产物哈希和「有没有上过机」都在 [WHERE-IT-STOPPED.md](WHERE-IT-STOPPED.md)，
-十七行，含几个提交共用同一份二进制的合并行。
+十七行，含几个提交共用同一份二进制的合并行 —— **表里是 rebase 前的 id**，见那一节的提示框。
 
 ## 验证
 

@@ -71,17 +71,38 @@ GEMM 比值低于发射率的 2×，因为 cuBLAS 还受显存带宽与调度限
 且没有 `NVRM Xid`、`nvidia-smi` 正常、两台显示器都回来了。我们是靠 `verify-unlock.ps1` 的
 `throttle 0x1` + live 比值证明同一件事。
 
-## 四、机制变体：`physicsdolphin/nv-uefi-unlocker`
+## 四、机制对照：`physicsdolphin/nv-uefi-unlocker`
 
-Rust 写的 UEFI 解锁器，★52，10-27 仍在更新。链条比我们长一步：
+Rust 写的 UEFI 解锁器，★52，10-27 仍在更新。链条：
 
 ```
 SEC2 scrubber → FWSEC-FRTS（WPR2）→ 签名 Booter 启动 GSP-RM
   →（门控后）V67 四写 payload → 读回验证 → FLR → 链式交回 Windows Boot Manager
 ```
 
-关键是**四写 payload**：我们这一路只写 `FEAT_OVR_PLM`（`0x823804`）一个寄存器，它是 V67 四 PLM
-一起写，并用固件侧 marker `0x67b00001` 自证。已实测两代：
+**先纠正本文档早前的一处判断**：曾写过「我们只写 `FEAT_OVR_PLM` 一个寄存器，它是四写」，这
+不成立。本仓库的 EFI 钉住并加载的就是同一份四写 payload —— `profile.c:19` 的 Pins、
+`boot_io.c:179-181` 的 `\AD104-ASSETS\` 加载表、`vendor/unlock_610.c:38` 的 `V67_FILE_AD102`，
+sha256 `44c36b2d…`、64000 B；RUN0001–RUN0013 每份日志都有
+`asset result: …four-plm.bin … bytes=64000`。四写目标由本地 payload 逐字节解出（值字/地址字成对）：
+
+| # | payload 偏移（值 / 地址） | 写值 | 目标寄存器 |
+|---|---|---|---|
+| 1 | `0xf948` / `0xf960` | `0xfffff0ff` | WPR_CFG `0x1fa7cc` |
+| 2 | `0xf974` / `0xf984` | `0xffffffff` | FBPA `0x9a0148` |
+| 3 | `0xf998` / `0xf9a8` | `0xffffffff` | WPR `0x1fa7c4` |
+| 4 | `0xf9bc` / `0xf9cc` | `0xffffffff` | FEAT_OVR_PLM `0x823804` |
+
+payload 随后在 mailbox0 置 marker `0x67b00001`（`0xf9e0`）并跳 cleanup（`0xf9fc`）。我们的读回
+检查（`vendor/unlock_610.c:337-342` 的 `ad102_permissions[]`）列的正是这四项，其中 `FBPA` 的
+`required=false` —— 是观测项、不计必过，与上游 `docs/ada-2705-report.md` 的「第四个 FBPA 字段
+仍读 `0xffffff0f`、不计入解锁」一致。
+
+这四个目标里**没有** `SS0`（`0x82381c`）/`SS1`（`0x823820`），所以四写与 `PITFALLS.md` #13 的
+blank 入口态**正交**：它既不是 blank 的成因，也绕不开 blank。§九 第 1 条的问法作废 —— 答案在
+本地清单里，不在 Rust 仓库里。
+
+它自己的实测两代（对方自述）：
 
 | 卡 | 结果 | 档位 |
 |---|---|---|
@@ -159,18 +180,24 @@ GSP 模式。对只做 Ada 的我们没有直接影响，但「FLR 会重锁 PLM
 | `docs/WHERE-IT-STOPPED.md` 「拉起来需要什么」 | 上游 base 从「基于 `4e7fefc`」改成「基于 `4e7fefc`（落后 main 84 个提交，2026-10-28 核对）」 |
 | `docs/PRIOR-ART.md` | 新增邻域：`nv-uefi-unlocker`（Rust、四写、`sim/`）、`wyx`（同卡、拓扑修复）、`impacifist` 的家族/机器 pin 分离、`Zagitta` 2.0 recipe |
 
-## 九、按价值排序的四件事
+## 九、四件事的处理结果（2026-10-28）
 
-1. **读 `v67-ad102-four-plm.bin` 写的是哪四个 PLM** —— 如果四写能顺带绕开 320 W override 下
-   `SS0`/`SS1` 读 0 的入口态问题，比现在的 blank 闸门更根本。
-2. **决定是否 rebase 到上游 main** —— 84 个提交里有 4080S 目标、已打开即跳过、FP8 发射率、
-   笔记本与 AD103M 支持。代价是 `boot_profile.h` 与 `profile.c` 的生成链要重新核一遍。
-3. **给 PITFALLS #2 补外部佐证** —— 第三方同卡移植独立撞上，比自测更有说服力。
-4. **补 `docs/PRIOR-ART.md` 的邻域表** —— 现在只列了五家，实际活跃的十几个。
+| # | 原议题 | 结论 |
+|---|---|---|
+| 1 | 读四写 payload 写的是哪四个 PLM，能否绕开 blank 入口态 | **已解**：WPR_CFG / FBPA / WPR / FEAT_OVR_PLM，与我们已在跑的是同一份 payload；不含 `SS0`/`SS1`，与 #13 正交。解码脚本见 `tools/payload-report.py`（可复跑、带 sha 与偏移校验） |
+| 2 | 是否 rebase 到上游 main | **已落，且验收通过**。改动集不相交：本 fork 33 个提交只碰 `windows/ad103-2705/**`（159 文件），上游 84 个提交在 `windows/` 下 **0 个文件**、`firmware/` 下也是 0 个（228 文件集中在 `docs/`、`diagnostics/bench`、`kernel/gpu_unlock`、各卡报告）。2026-10-28 已 rebase `517930f` → `d28c485`，干净重放 33 个提交，tip 变 `5cc799c`，原 tip 打成 tag `ad103-2705-pre-rebase-20261028`（未 force-push）。硬验收：`windows/ad103-2705` 子树哈希前后同为 `70a027c1`；重建的 EFI 仍为 **106496 B / `0705256564e57690…`**，与 rebase 前逐字节相同。结果同时记在 fork 的 `CHANGES.md` 与 `docs/WHERE-IT-STOPPED.md` |
+| 3 | 给 PITFALLS #2 补外部佐证 | **已落** `docs/PITFALLS.md` #2：`wyx` 的 `PORT-2705.md` 独立撞上同一 root port 下第二个 child 无 GOP，修法是改 `ownership.c`（约 90 行 / 3 文件） |
+| 4 | 补 `docs/PRIOR-ART.md` 的邻域表 | **已落**：新增 `nv-uefi-unlocker`、`wyx`、`impacifist c403e8f`、`Zagitta 2.0` 四节，并指向新的 `docs/UPSTREAM-2705-CROSSCHECK.md` |
+
+跨系统数据核对另开一篇：`docs/UPSTREAM-2705-CROSSCHECK.md`（上游 Linux 240 W 与我们 Windows
+320 W 逐项对表，解释差异来源，避免把两边绝对值当成互相矛盾）。
 
 ## 附：这份文档没做的事
 
 - 没有 clone 任何外部仓库，也没编译过别人的代码。所以上表「对方自述」的数字都是转述。
-- 没有核对 `hdcdn` 那份整理的正确性，只取了它引的上游数字（`59.326 → 59.495`）。
+- `hdcdn` 那条 `59.326 → 59.495` 已用一次源核对：它就是上游 `docs/ada-2705-report.md` 里
+  「matched E4M3/FP32 CUTLASS GEMM，`m=n=k=4096`，240 W 帽，1.0029×」那一组，转述无误。
+  上游 2705 报告本身没被读过之前，这里写的是「未核对」；现已核对，见
+  `docs/UPSTREAM-2705-CROSSCHECK.md`。
 - 没有追 `Goldlionren/gpu-unlock-4080s`（`PRIOR-ART.md` 已收）与 `unitypit71`（`README.md` 致谢里已有）
   的后续，两者的最后更新都早于 2026-10-24。

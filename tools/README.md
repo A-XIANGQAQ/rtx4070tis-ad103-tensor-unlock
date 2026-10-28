@@ -1,6 +1,6 @@
-# tools：六个脚本
+# tools：七个脚本
 
-`.ps1` 与两个 `.py` 都是操作脚本。除 `gen_profile.py`（GPL-2.0-only，内嵌上游 `profile.c`
+`.ps1` 与三个 `.py` 都是操作脚本。除 `gen_profile.py`（GPL-2.0-only，内嵌上游 `profile.c`
 的模板）外都是 MIT，首行带 SPDX。
 
 | 脚本 | 做什么 | 会改动什么 | 退出码 |
@@ -11,6 +11,7 @@
 | `install-esp.ps1` | 接管内置 ESP 的 `bootmgfw.efi` | **改启动盘**：`bootmgfw.efi` 换成解锁 EFI，原版逐字节改名保留为 `bootmgfw.orig.efi`；`-Rollback` 才还原并删 `AD104-ASSETS` / `AD104-UNLOCK` | 0 / 非 0；目录里有 `RUN*.TXT` 时没有 `-Force` 就拒 |
 | `gen_profile.py` | 从 `AD104-PROBE` 的 schema-4 capture JSON 生成 `profile.c` 与 `capture-constants.json` | 写 `--out` 与 `--json-out` 两个文件 | Python 异常即失败 |
 | `patch-target.py` | 把上游 `windows/ad104-msi` 复制一份、逐项改写数值 pin，产出 `windows/ad103-2705` | **`--out` 目录先删再重建**；`--dry-run` 只打 diff | 九个 `--xxx` 缺一个就报错退出 |
+| `payload-report.py` | 把 `v67-ad102-…-four-plm.bin` 的四写解开成表：四组目标地址/写入值、canary、marker、cleanup 偏移，并逐项核对 | 只读；不含 payload 时按默认路径找 `H:\AD104-ASSETS` | 0 全部核对通过 / 1 有字段对不上（打印 `FAIL …` 那一行）/ 2 文件缺失或长度不是 64000 |
 
 ## 三个会动到硬件的
 
