@@ -13,3 +13,4 @@ build/
 *.log
 Thumbs.db
 Desktop.ini
+.git-msg.tmp

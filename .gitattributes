@@ -1,0 +1,3 @@
+# 这两组文件被 SHA256SUMS 逐字节校验，换行符不能被平台改写。
+runlogs/*.TXT   -text
+results/*.txt   -text

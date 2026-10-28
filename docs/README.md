@@ -1,9 +1,10 @@
 # 文档索引
 
-九篇，各管一件事。按要回答的问题选。
+十篇，各管一件事。按要回答的问题选。
 
 | 文档 | 回答什么 | 什么时候翻 |
 |---|---|---|
+| [HANDOFF.md](HANDOFF.md) | 从零接手的顺序：先读哪三个、三句关键事实、目录地图、日志怎么用 | 第一次打开这个仓库 |
 | [EVIDENCE.md](EVIDENCE.md) | 结论背后的东西：仪器条件、全量数字、日志原文、判据为什么是比值 | 想复核某个数、怀疑测量条件时 |
 | [REPRODUCE.md](REPRODUCE.md) | 完整命令、每个脚本的边界、换卡流程、从任意提交重建 | 动手之前 |
 | [DLSS.md](DLSS.md) | 为什么 DLSS 与帧生成没有收益，以及怎么自己测帧率 | 想知道游戏会不会变快 |
@@ -16,7 +17,8 @@
 
 仓库根的 [README.md](../README.md) 是入口与结果表，[results/README.md](../results/README.md)
 是每份原始采集的条件与统计口径，[bench/README.md](../bench/README.md) 与
-[tools/README.md](../tools/README.md) 分别讲探针和脚本。
+[tools/README.md](../tools/README.md) 分别讲探针和脚本。[runlogs/](../runlogs/) 是 13 份
+U 盘原始日志的副本，`SHA256SUMS` 可复核。
 
 ## 四处容易搞混的
 

@@ -112,7 +112,8 @@ windows/ad103-2705/   本卡的移植（在 fork 分支上，不在这里）
 bench/                四个探针 + build.cmd，见 bench/README.md
 tools/                六个脚本，见 tools/README.md
 results/              原始 benchmark 输出 + SHA256SUMS，见 results/README.md
-docs/                 九篇文档，见 docs/README.md
+runlogs/              13 份 U 盘原始启动日志 + SHA256SUMS，见 docs/HANDOFF.md
+docs/                 十篇文档，见 docs/README.md
 ```
 
 `bench/*.cu`、`bench/build*.cmd`、`tools/` 下除一个文件外都是自己写的 MIT，首行带 SPDX。
@@ -155,8 +156,9 @@ bug，每个 GEMM 输出全零矩阵）。两条都记在 [docs/PITFALLS.md](doc
 | `test_msi_release` | 763156 checks / 47 cases（跑的是 `synthetic` 替身） |
 
 判读日志用 [`tools\classify-run.ps1`](tools/classify-run.ps1)，它把一份 `RUN*.TXT` 分成十七种
-结局，`-All` 把历史每一轮压成一行。每次构建的哈希与上机记录在
-[docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
+结局，`-All` 把历史每一轮压成一行。13 份原始日志就在 [runlogs/](runlogs/)（`SHA256SUMS` 可
+复核），不用去翻 U 盘：`tools\classify-run.ps1 -LogRoot .\runlogs -All`。每次构建的哈希与
+上机记录在 [docs/WHERE-IT-STOPPED.md](docs/WHERE-IT-STOPPED.md)。
 
 移植期撞到 19 个坑，每条都是「症状 → 原因 → 改法」：[docs/PITFALLS.md](docs/PITFALLS.md)。
 其中 cuBLAS alpha 宽度、`Sealed` 不复位、为绕过 `GpuChild()` 而放宽的图检查、`profile.c`
