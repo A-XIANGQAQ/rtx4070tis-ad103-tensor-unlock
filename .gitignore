@@ -8,4 +8,8 @@
 __pycache__/
 *.pyc
 .vs/
+.vscode/
 build/
+*.log
+Thumbs.db
+Desktop.ini

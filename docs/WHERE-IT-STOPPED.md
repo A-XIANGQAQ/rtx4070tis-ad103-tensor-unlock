@@ -1,8 +1,8 @@
-# 这条路走到哪（2026-10-27 更新）
+# 这条路走到哪（2026-10-28 更新）
 
 **U 盘手动引导这条路已经走通。** `RUN0005` 是修好的版本第一次跑成功：写寄存器 → FLR →
-干净交棒给 `bootmgfw.efi`，Windows 起来后 `f16/f32 ÷ f16/f16 = 1.001`，对照组不动。
-同一次 boot 内隔一段时间再测，比值仍是 1.001。
+干净交棒给 `bootmgfw.efi`，Windows 起来后 `f16/f32 ÷ f16/f16 = 1.006`，对照组不动。
+同一次 boot 内隔一段时间再测，绝对值整体涨 6%，比值是 1.001（见下表）。
 
 没走通的只有 ESP 接管那条，装上去卡在 boot 阶段，见下。
 
@@ -21,16 +21,19 @@
 | `ffma` | 41.8 | 41.5 | 44.8 |
 
 复测那一列整体比首次高约 6%，因为卡跑在 2640 MHz 而不是更低频。变的只有频率：
-两轮的 `f16/f32 ÷ f16/f16` 分别是 1.006 和 1.001，比值不动。所以判据只能是比值。
+两轮的 `f16/f32 ÷ f16/f16` 分别是 1.006 和 1.001，比值不动。
 
 事务日志：`result=0 safe=1 retained=0 started=1 quiesced=1 flrs=1 DMA_live=0`，
 FLR 后 `SS0=0x88888888 SS1=0x00000008 readout1=0 full=1`。
 数值校验 `failures=0 max_abs=0`（每个模式 79935 个 cell，FP16 与 BF16 两种累加合计
 159870 个）。
 
-**这条路径有 Windows 内实测数据的只有两次**：10/25 23:18 那次（`RESULT.md` 记 EFI
+**这条路径有 Windows 内实测数据的有三批**：10/25 23:18 那次（`RESULT.md` 记 EFI
 `5d5277c2`，100864 B；System 日志 23:15:55 有一次启动，2 分半后就是那批数据，对得上。
-但那份 EFI 和它的 `RUNxxxx.TXT` 现在都不在盘上了）和 `RUN0005`（EFI `76FEE036`）。
+但那份 EFI 和它的 `RUNxxxx.TXT` 现在都不在盘上了）、`RUN0005`（EFI `76FEE036`）和
+`RUN0013`（EFI `07052565`，320 W override 同时生效，原始输出在
+`results/*-320w-run0013.txt`）。`RUN0004` 与 `RUN0006` 的事务体也是全绿，但 `results/`
+里没有对应的采集，所以只在这份文档里当过程记录，不进对照表。
 
 不算的几次，理由都是实的：
 
@@ -181,10 +184,13 @@ if(n!=sizeof(HARDDRIVE_DEVICE_PATH)||++hd!=1)return FALSE;
 
 注：这台机器的 ESP 是 disk 3 分区 1，300 MB。`Inspect()` 的多盘容忍和上面三个
 bug 的修复在同一个 EFI 里，所以 U 盘上那份就包含它们。走 U 盘这一路不需要 ESP
-那部分，只有回头试 ESP 时才用得上。本场景现在札在哪一份镜像上，看下面的构建表和
+那部分，只有回头试 ESP 时才用得上。本场景现在挂在哪一份镜像上，看下面的构建表和
 `H:\EFI\BOOT\BOOTX64.EFI` 那一段；这里不重复写哈希，免得又过期。
 
 ## 320 W VBIOS override 与 SM 解锁的冲突（改在解锁侧，未上硬件）
+
+字节级比对（Power 表偏移、校验和算法、四个 payload 搜索、两份 ROM 的 12.6% 重合）和
+五行引脚表的完整版在 [PITFALLS.md](PITFALLS.md) #13；下面把结论和用到的数字再列一遍。
 
 用 `vbios-loader.exe` 载入改过功率表的 VBIOS 之后，六次冷启动（`RUN0007`–`RUN0012`）
 全部停在同一个地方，六份日志 sha256 逐字节相同（`8F61DB14…`），只有三行：
@@ -330,15 +336,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -File
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\classify-run.ps1 -All
 ```
 
-它给十七种判决（不含 `UNKNOWN` 那个占位），下表是全部十七种。四种在真实日志上出现过，
-其余只有合成样例（`blank` 那两种要等
-`RUN0013` 才可能有真实样本，`ENTRY-REFUSED-PIN`、`ENTRY-REFUSED-NEITHER-STATE`、
-`GATE-REFUSED-AFTER-RELEASE`、`CLAIM-NOT-HELD`、`TRANSACTION-FAILED`、
-`TRANSACTION-FAILED-THEN-STOP`、`FLR-REFUSED`、`SELECTOR-WRITE-REFUSED` 与 `TRUNCATED` 至今没在真机上出现过）：
+它给十七种判决（不含 `UNKNOWN` 那个占位），下表是全部十七种。四种在真实日志上出现过
+（`TRANSACTION-COMPLETE`、`TX-OK-THEN-HALT`、`ENTRY-REFUSED-SELECTOR`、`SKIPPED`），
+其余十三种只有合成样例：`TRANSACTION-FAILED`、`TRANSACTION-FAILED-THEN-STOP`、
+`SELECTOR-WRITE-REFUSED`、`FLR-REFUSED`、`ENTRY-REFUSED-NEITHER-STATE`、
+`BLANK-ACCEPTED-THEN-STOP`、`BLANK-ACCEPTED`、`ENTRY-REFUSED-PIN`、
+`ENTRY-REFUSED-PREPARE`、`CLAIM-NOT-HELD`、`GATE-REFUSED-AFTER-RELEASE`、
+`TRUNCATED`、`STOPPED`。`RUN0013` 是从 blank 入口态进来的，判决却落在
+`TRANSACTION-COMPLETE`，所以两条 `BLANK-*` 到现在仍只有合成样例：
 
 | 判决 | 含义 | 出处 |
 |---|---|---|
-| `TRANSACTION-COMPLETE` | `Transaction result=0`，事务跑完了，进 Windows 后验算力 | `RUN0004`–`RUN0006` |
+| `TRANSACTION-COMPLETE` | `Transaction result=0`，事务跑完了，进 Windows 后验算力 | `RUN0004`–`RUN0006`、`RUN0013` |
 | `TX-OK-THEN-HALT` | `Transaction result=0`，但随后某段 `STOP` | `RUN0001` / `RUN0002` |
 | `TRANSACTION-FAILED` | `Transaction result` 非 0，没有 `STOP` | 合成样例 |
 | `SELECTOR-WRITE-REFUSED` | 选通器写完后被自己的回读判为不对，没走到 reset，`result=-5` 只是后果 | 合成样例 |
@@ -452,8 +461,9 @@ G:\workspace\repo-ad103\tools\verify-unlock.ps1
   10d `%p` 会静默整份日志）、#12 cuBLAS alpha 宽度、#13 override 让 SS0/SS1 读 0、
   #14 `Sealed` 从不复位、#15 为绕过 `GpuChild()` 而放宽的图检查、
   #16 `profile.c` 是生成文件手改会丢、#17 工作区里启动的进程写不了工作区外、
-  #18 改注释行数会通过 `__LINE__` 改变产物哈希
+  #18 改注释行数会通过 `__LINE__` 改变产物哈希、#19 这台机器有两个 `bootmgfw.efi`
+  （3086848 与 3086680，差 168 字节，ESP 上装的是后者）
 - 本仓库 `docs/PRIOR-ART.md`：邻域实现对比，含本移植做错的两处
-- `bench/`：四个 benchmark 源（`mma_bench` 在上游 `diagnostics/bench/` 下），
-  口径与 `results/` 一致
+- `bench/`：四个 benchmark 源（`mma_bench` 在上游 `diagnostics/bench/` 下；`gemm_check`
+  本机只有 exe，源码不在盘上），各自测什么见 `bench/README.md`，口径与 `results/` 一致
 

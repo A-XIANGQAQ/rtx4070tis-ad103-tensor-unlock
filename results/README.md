@@ -15,17 +15,22 @@ Get-Content SHA256SUMS | ForEach-Object {
 
 | 文件 | 探针 | 说明 |
 |---|---|---|
-| `mma-baseline.txt` | `bench/mma_bench.cu`（f16/bf16/s8/dp4a/ffma） | stock 基线，10/25 采集 |
+| `mma-baseline.txt` | `mma_bench`（f16/bf16/s8/dp4a/ffma），源码在上游 `diagnostics/bench/`，不在本仓库 | stock 基线，10/25 采集 |
 | `fp8-baseline.txt` | `bench/fp8_mma_bench.cu`，`mma.m16n8k32` e4m3→f32，寄存器空转 | **issue rate**，不是 GEMM；stock 基线 |
 | `mma-unlocked.txt` / `fp8-unlocked.txt` | 同上两套 | 10/25 23:18 那次解锁（`RESULT.md` 记 EFI `5d5277c2`，100864 B；**该 EFI 产物与当次 `RUNxxxx.TXT` 均已不在盘上**），`reps=3` |
 | `mma-unlocked-run0005.txt` / `fp8-unlocked-run0005.txt` | 同上两套 | `RUN0005`（修好的 EFI）那次开机，`reps=5` |
 | `cublas-unlocked-run0005.txt` | `bench/cublas_gemm.cu` GEMM，N=8192 | `RUN0005` 那次开机；每用例带 `nonzero C` 校验行 |
 | `mma-unlocked-live.txt` / `fp8-unlocked-live.txt` / `cublas-unlocked-live.txt` | 同上三套 | 同一个 boot 内后来复测（卡跑在 2640 MHz） |
 | `cublas-contaminated.txt` | cuBLAS GEMM | **污染样本**：采集时 GPU 有其他负载，保留作为 `docs/PITFALLS.md` #11 的原始证据 |
-| mma-unlocked-320w-run0013.txt | `bench/mma_bench.cu` | **`RUN0013`（2026-10-28 07:43，320 W override 生效）**。四次之中的最后一次，`reps=3`；与 285 W 那批可直接对拍 |
+| mma-unlocked-320w-run0013.txt | `mma_bench` | **`RUN0013`（2026-10-28 07:43，320 W override 生效）**。四次之中的最后一次，`reps=3`；与 285 W 那批可直接对拍 |
 | fp8-unlocked-320w-run0013.txt | `bench/fp8_mma_bench.cu` | 同上那次开机，**issue rate**，不是 GEMM |
-| gemm-check-320w-run0013.txt | `bench/gemm_check.cu` | 同上那次开机的数值校验：六组 × 6144–65536 cells，全部 `failures=0 max_abs=0`；每行都带 `#` 头说明当时 EFI 与 override 状态 |
+| gemm-check-320w-run0013.txt | `gemm_check`（本机只有 exe，源码不在盘上） | 同上那次开机的数值校验：六组 × 6144–65536 cells，全部 `failures=0 max_abs=0`；每行都带 `#` 头说明当时 EFI 与 override 状态 |
 | `mma-stock-after-poweroff.txt` / `fp8-stock-after-poweroff.txt` | 同上两套 | 10/27 09:33 采集。**断电一夜后第一次上电、没走 U 盘引导**，是易失性的对照组：确认 `SS0`/`SS1` 真的被断电清掉了 |
+
+表里两个探针的源码不在本仓库：`mma_bench.cu` 在上游 `gpu-unlock-ada/diagnostics/bench/`
+（GPL-2.0-only，未随本仓库分发），`gemm_check` 只有 exe。带源码的四个探针是
+`cublas_gemm.cu`、`fp8_bench.cu`、`fp8_mma_bench.cu`、`probe_f16acc.cu`，各自测什么见
+[../bench/README.md](../bench/README.md)。
 
 `*run0005` 与 `*-live` 的 6 行 `#` 头里带 EFI 的 sha256、boot 时刻、日志路径。
 拿它和 `H:\AD104-UNLOCK\RUN0005.TXT` 对得上，才能证明这批数字是那次解锁状态下测的。
